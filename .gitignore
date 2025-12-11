@@ -1,0 +1,13 @@
+# Binaries
+siro-backend
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# Test binary
+*.test
+
+# Project files
+.env
