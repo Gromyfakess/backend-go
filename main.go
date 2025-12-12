@@ -83,6 +83,6 @@ func main() {
 	if port == "" {
 		port = "8080"
 	}
-	fmt.Printf("Server running on http://127.0.0.1:%s\n", port)
+	fmt.Printf("Server running on port :%s\n", port)
 	r.Run(":" + port)
 }

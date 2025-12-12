@@ -88,7 +88,7 @@ func UploadFile(c *gin.Context) {
 		return
 	}
 
-	// 2. Validasi Ekstensi (Whitelist)
+	// Validasi Ekstensi
 	ext := strings.ToLower(filepath.Ext(file.Filename))
 	allowedExts := map[string]bool{".jpg": true, ".jpeg": true, ".png": true}
 	if !allowedExts[ext] {
@@ -96,7 +96,7 @@ func UploadFile(c *gin.Context) {
 		return
 	}
 
-	// 3. Validasi Konten File (Magic Bytes / MIME Sniffing)
+	// Validasi Konten File (Magic Bytes / MIME Sniffing)
 	src, err := file.Open()
 	if err != nil {
 		c.JSON(500, gin.H{"error": "Failed to open file"})
@@ -122,8 +122,7 @@ func UploadFile(c *gin.Context) {
 		return
 	}
 
-	// 4. Sanitasi & Rename Nama File (Mencegah Path Traversal & Overwrite)
-	// Format: timestamp_random.ext
+	// Sanitasi & Rename Nama File (Mencegah Path Traversal & Overwrite)
 	filename := fmt.Sprintf("%d_%s%s", time.Now().UnixNano(), "avatar", ext)
 	savePath := filepath.Join("uploads", filename)
 
@@ -138,13 +137,14 @@ func UploadFile(c *gin.Context) {
 		return
 	}
 
-	baseURL := os.Getenv("FRONTEND_URL")
-	if baseURL == "" {
-		baseURL = "http://127.0.0.1:8080"
+	backendURL := "http://localhost:8080"
+
+	if envURL := os.Getenv("BACKEND_URL"); envURL != "" {
+		backendURL = envURL
 	}
 
-	// URL ini mengarah ke r.Static("/uploads", "./uploads") di main.go
-	fullURL := fmt.Sprintf("%s/uploads/%s", baseURL, filename)
+	// URL Static File
+	fullURL := fmt.Sprintf("%s/uploads/%s", backendURL, filename)
 
 	c.JSON(200, gin.H{"url": fullURL})
 }
@@ -188,16 +188,27 @@ func CreateUser(c *gin.Context) {
 	// Hash password sebelum disimpan
 	p, _ := utils.HashPassword(i.Password)
 
+	baseURL := os.Getenv("BACKEND_URL")
+	if baseURL == "" {
+		baseURL = "http://localhost:8080"
+	}
+
+	defaultAvatar := fmt.Sprintf("%s/uploads/default-avatar.jpg", baseURL)
+
+	if i.AvatarURL != "" {
+		defaultAvatar = i.AvatarURL
+	}
+
 	u := models.User{
 		Name:         i.Name,
 		Email:        i.Email,
 		Role:         i.Role,
 		Unit:         i.Unit,
-		Phone:        i.Phone, // <--- Simpan Phone
+		Phone:        i.Phone,
 		CanCRUD:      i.CanCRUD,
 		PasswordHash: p,
 		Availability: "Offline",
-		AvatarURL:    "https://i.pravatar.cc/150", // Default avatar
+		AvatarURL:    defaultAvatar,
 	}
 
 	if err := repository.CreateUser(&u); err != nil {

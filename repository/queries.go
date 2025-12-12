@@ -85,7 +85,7 @@ func CheckRefreshTokenValid(userID uint, refreshString string) (bool, time.Time)
 	if err != nil {
 		return false, time.Time{}
 	}
-	// Token harus sama persis DAN belum expired
+	// Token harus sama persis & belum expired
 	isValid := (tokenData.RefreshToken == refreshString) && (time.Now().Before(tokenData.RTExpiresAt))
 	return isValid, tokenData.RTExpiresAt
 }

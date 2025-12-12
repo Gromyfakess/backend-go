@@ -35,20 +35,19 @@ func LoginHandler(c *gin.Context) {
 		return
 	}
 
-	// SIMPAN SEMUA KE DB
 	repository.SaveAllTokens(user.ID, acc, ref, atExp, rtExp)
 
 	// PENTING: Set Cookie (untuk keamanan browser) DAN kirim JSON (untuk NextAuth)
 	c.SetCookie("refresh_token", ref, 3600*24*7, "/", "localhost", false, true)
 
-	// HITUNG SISA WAKTU (detik) UNTUK ACCESS TOKEN
+	// Sisa waktu Access Token
 	expiresIn := int(time.Until(atExp).Seconds())
 
-	// KIRIM TOKEN DI BODY AGAR NEXTAUTH BISA MENYIMPANNYA
+	// Kirim token di body
 	c.JSON(200, gin.H{
 		"accessToken":  acc,
-		"refreshToken": ref,       // <--- Tambahan Wajib
-		"expiresIn":    expiresIn, // <--- Tambahan Wajib
+		"refreshToken": ref,
+		"expiresIn":    expiresIn,
 		"user":         user,
 	})
 }
