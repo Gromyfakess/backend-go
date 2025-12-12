@@ -2,13 +2,14 @@ package models
 
 import "time"
 
-// User: Tabel pengguna utama
+// User
 type User struct {
 	ID           uint      `json:"id" gorm:"primaryKey"`
 	Name         string    `json:"name"`
 	Email        string    `json:"email" gorm:"unique;size:100"`
 	Role         string    `json:"role"`
 	Unit         string    `json:"unit"`
+	Phone        string    `json:"phone"`
 	AvatarURL    string    `json:"avatar"`
 	Availability string    `json:"availability"`
 	CanCRUD      bool      `json:"canCRUD"`
@@ -27,16 +28,16 @@ type UserToken struct {
 
 // WorkOrder: Tabel request/tiket
 type WorkOrder struct {
-	ID          uint   `json:"id" gorm:"primaryKey"`
-	Title       string `json:"title"`
-	Description string `json:"description"`
-	Priority    string `json:"priority"`
-	Status      string `json:"status"`
-	Unit        string `json:"unit"`
-
+	ID            uint   `json:"id" gorm:"primaryKey"`
+	Title         string `json:"title"`
+	Description   string `json:"description"`
+	Priority      string `json:"priority"`
+	Status        string `json:"status"`
+	Unit          string `json:"unit"`
 	RequesterID   uint   `json:"requesterId"`
 	RequesterName string `json:"requester"`
-	RequesterData User   `json:"requesterData" gorm:"foreignKey:RequesterID"`
+	// Relasi ke User
+	RequesterData User `json:"requesterData" gorm:"foreignKey:RequesterID"`
 
 	AssigneeID *uint `json:"assigneeId"`
 	Assignee   User  `json:"assignee" gorm:"foreignKey:AssigneeID"`
@@ -65,6 +66,7 @@ type UserRequest struct {
 	Password  string `json:"password"`
 	Role      string `json:"role" binding:"required"`
 	Unit      string `json:"unit" binding:"required"`
+	Phone     string `json:"phone"`
 	CanCRUD   bool   `json:"canCRUD"`
 	AvatarURL string `json:"avatar"`
 }

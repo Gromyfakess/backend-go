@@ -1,16 +1,31 @@
 package controllers
 
 import (
+	"fmt"
+	"net/http"
+	"os"
+	"path/filepath"
+	"strconv"
+	"strings"
+	"time"
+
 	"siro-backend/models"
 	"siro-backend/repository"
 	"siro-backend/utils"
-	"strconv"
 
 	"github.com/gin-gonic/gin"
 )
 
+// --- PUBLIC / AUTHENTICATED USER HANDLERS ---
+
+// GetMe: Mengambil data user yang sedang login
 func GetMe(c *gin.Context) {
-	uid, _ := c.Get("userID")
+	uid, exists := c.Get("userID")
+	if !exists {
+		c.JSON(401, gin.H{"error": "Unauthorized"})
+		return
+	}
+
 	user, err := repository.GetUserByID(uid.(uint))
 	if err != nil {
 		c.JSON(404, gin.H{"error": "User not found"})
@@ -19,21 +34,144 @@ func GetMe(c *gin.Context) {
 	c.JSON(200, user)
 }
 
+// UpdateMe: User mengupdate datanya sendiri (Nama, Telepon, Avatar)
+func UpdateMe(c *gin.Context) {
+	uid, _ := c.Get("userID") // Ambil ID dari token
+
+	// Ambil data user lama
+	user, err := repository.GetUserByID(uid.(uint))
+	if err != nil {
+		c.JSON(404, gin.H{"error": "User not found"})
+		return
+	}
+
+	// Bind input JSON baru
+	var i models.UserRequest
+	if err := c.ShouldBindJSON(&i); err != nil {
+		c.JSON(400, gin.H{"error": err.Error()})
+		return
+	}
+
+	// Update field
+	user.Name = i.Name
+	user.Phone = i.Phone
+
+	// Update avatar jika dikirim string URL-nya
+	if i.AvatarURL != "" {
+		user.AvatarURL = i.AvatarURL
+	}
+
+	// Update password opsional (hanya jika diisi)
+	if i.Password != "" {
+		p, _ := utils.HashPassword(i.Password)
+		user.PasswordHash = p
+	}
+
+	// 4. Simpan ke database
+	if err := repository.UpdateUser(&user); err != nil {
+		c.JSON(500, gin.H{"error": "Failed to update profile"})
+		return
+	}
+
+	c.JSON(200, user)
+}
+
+// UploadFile: Upload gambar avatar dengan keamanan ketat (Anti-Webshell)
+func UploadFile(c *gin.Context) {
+	// 1. Batasi Ukuran File (Max 2MB)
+	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, 2<<20)
+
+	// Ambil file dari form-data
+	file, err := c.FormFile("file")
+	if err != nil {
+		c.JSON(400, gin.H{"error": "File required (max 2MB)"})
+		return
+	}
+
+	// 2. Validasi Ekstensi (Whitelist)
+	ext := strings.ToLower(filepath.Ext(file.Filename))
+	allowedExts := map[string]bool{".jpg": true, ".jpeg": true, ".png": true}
+	if !allowedExts[ext] {
+		c.JSON(400, gin.H{"error": "File type not allowed. Only .jpg, .jpeg, .png"})
+		return
+	}
+
+	// 3. Validasi Konten File (Magic Bytes / MIME Sniffing)
+	src, err := file.Open()
+	if err != nil {
+		c.JSON(500, gin.H{"error": "Failed to open file"})
+		return
+	}
+	defer src.Close()
+
+	// Baca 512 byte pertama untuk deteksi tipe konten asli
+	buffer := make([]byte, 512)
+	_, err = src.Read(buffer)
+	if err != nil {
+		c.JSON(500, gin.H{"error": "Failed to sniff file"})
+		return
+	}
+
+	// Reset pointer file kembali ke awal agar bisa disimpan utuh nanti
+	src.Seek(0, 0)
+
+	contentType := http.DetectContentType(buffer)
+	allowedMimes := map[string]bool{"image/jpeg": true, "image/png": true}
+	if !allowedMimes[contentType] {
+		c.JSON(400, gin.H{"error": "Invalid file content (fake extension detected)"})
+		return
+	}
+
+	// 4. Sanitasi & Rename Nama File (Mencegah Path Traversal & Overwrite)
+	// Format: timestamp_random.ext
+	filename := fmt.Sprintf("%d_%s%s", time.Now().UnixNano(), "avatar", ext)
+	savePath := filepath.Join("uploads", filename)
+
+	// Pastikan folder uploads ada
+	if _, err := os.Stat("uploads"); os.IsNotExist(err) {
+		os.Mkdir("uploads", 0755)
+	}
+
+	// Simpan File ke Disk
+	if err := c.SaveUploadedFile(file, savePath); err != nil {
+		c.JSON(500, gin.H{"error": "Failed to save file"})
+		return
+	}
+
+	baseURL := os.Getenv("FRONTEND_URL")
+	if baseURL == "" {
+		baseURL = "http://127.0.0.1:8080"
+	}
+
+	// URL ini mengarah ke r.Static("/uploads", "./uploads") di main.go
+	fullURL := fmt.Sprintf("%s/uploads/%s", baseURL, filename)
+
+	c.JSON(200, gin.H{"url": fullURL})
+}
+
+// GetStaffList: Mengambil list staff IT Center
 func GetStaffList(c *gin.Context) {
 	users := repository.GetStaffByUnit("IT Center")
 	c.JSON(200, users)
 }
 
+// UpdateAvailability: Update status online/busy/away
 func UpdateAvailability(c *gin.Context) {
 	id := c.Param("id")
 	var i models.AvailabilityRequest
 	if err := c.ShouldBindJSON(&i); err != nil {
-		c.JSON(400, gin.H{"error": "Invalid"})
+		c.JSON(400, gin.H{"error": "Invalid input"})
 		return
 	}
-	repository.UpdateAvailability(id, i.Status)
+
+	if err := repository.UpdateAvailability(id, i.Status); err != nil {
+		c.JSON(500, gin.H{"error": "Failed update availability"})
+		return
+	}
 	c.JSON(200, gin.H{"status": "ok"})
 }
+
+// --- ADMIN HANDLERS (CRUD Users) ---
 
 func GetAllUsers(c *gin.Context) {
 	users := repository.GetAllUsers()
@@ -46,18 +184,26 @@ func CreateUser(c *gin.Context) {
 		c.JSON(400, gin.H{"error": err.Error()})
 		return
 	}
+
+	// Hash password sebelum disimpan
 	p, _ := utils.HashPassword(i.Password)
+
 	u := models.User{
 		Name:         i.Name,
 		Email:        i.Email,
 		Role:         i.Role,
 		Unit:         i.Unit,
+		Phone:        i.Phone, // <--- Simpan Phone
 		CanCRUD:      i.CanCRUD,
 		PasswordHash: p,
 		Availability: "Offline",
-		AvatarURL:    "https://i.pravatar.cc/150",
+		AvatarURL:    "https://i.pravatar.cc/150", // Default avatar
 	}
-	repository.CreateUser(&u)
+
+	if err := repository.CreateUser(&u); err != nil {
+		c.JSON(500, gin.H{"error": "Failed to create user"})
+		return
+	}
 	c.JSON(201, u)
 }
 
@@ -70,24 +216,38 @@ func UpdateUser(c *gin.Context) {
 	}
 
 	id, _ := strconv.Atoi(idStr)
-	user, _ := repository.GetUserByID(uint(id))
+	user, err := repository.GetUserByID(uint(id))
+	if err != nil {
+		c.JSON(404, gin.H{"error": "User not found"})
+		return
+	}
 
+	// Admin berhak update semua field
 	user.Name = i.Name
 	user.Email = i.Email
 	user.Role = i.Role
 	user.Unit = i.Unit
+	user.Phone = i.Phone // <--- Update Phone
 	user.CanCRUD = i.CanCRUD
+
+	// Update password hanya jika admin mengisi field password
 	if i.Password != "" {
 		p, _ := utils.HashPassword(i.Password)
 		user.PasswordHash = p
 	}
 
-	repository.UpdateUser(&user)
+	if err := repository.UpdateUser(&user); err != nil {
+		c.JSON(500, gin.H{"error": "Failed to update user"})
+		return
+	}
 	c.JSON(200, user)
 }
 
 func DeleteUser(c *gin.Context) {
 	id := c.Param("id")
-	repository.DeleteUser(id)
+	if err := repository.DeleteUser(id); err != nil {
+		c.JSON(500, gin.H{"error": "Failed to delete user"})
+		return
+	}
 	c.JSON(200, gin.H{"message": "Deleted"})
 }
