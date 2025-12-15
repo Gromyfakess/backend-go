@@ -37,8 +37,8 @@ func main() {
 		AllowCredentials: true,
 	}))
 
-	// 1. STATIC FILE SERVING (Agar gambar yang diupload bisa dibuka)
-	// Akses via: http://localhost:8080/uploads/namafile.jpg
+	// STATIC FILE SERVING (Agar gambar yang diupload bisa dibuka)
+	// http://localhost:8080/uploads/namafile.jpg
 	r.Static("/uploads", "./uploads")
 
 	// Public Routes

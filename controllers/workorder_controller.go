@@ -37,8 +37,8 @@ func CreateWorkOrder(c *gin.Context) {
 		Description:   input.Description,
 		Priority:      input.Priority,
 		RequesterID:   requester.ID,
-		RequesterName: requester.Name, // Snapshot Nama
-		// RequesterAvatar: SUDAH DIHAPUS (Diambil via Relasi RequesterData)
+		RequesterName: requester.Name,
+
 		Unit:      unit,
 		Status:    "Pending",
 		CreatedAt: time.Now(),
@@ -50,8 +50,7 @@ func CreateWorkOrder(c *gin.Context) {
 		return
 	}
 
-	// Opsional: Reload data agar frontend mendapat struct lengkap (termasuk RequesterData)
-	// Kita konversi ID uint ke string dulu untuk query
+	// Kita konversi ID uint ke string untuk query
 	fullOrder, _ := repository.GetWorkOrderById(strconv.Itoa(int(newOrder.ID)))
 
 	c.JSON(201, fullOrder)

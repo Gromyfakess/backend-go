@@ -84,26 +84,33 @@ func RefreshHandler(c *gin.Context) {
 		return
 	}
 
-	// --- INTELLIGENT REFRESH LOGIC ---
-
+	// --- Intelligent Refresh Logic ---
 	timeRemaining := time.Until(rtExpiresAt)
 	rotationThreshold := time.Hour * 12
 
 	if timeRemaining < rotationThreshold {
+		// Rotate: Access + Refresh
 		newAcc, newRef, newAtExp, newRtExp, _ := utils.GenerateAllTokens(user.ID, user.Role, user.CanCRUD)
-
 		repository.SaveAllTokens(user.ID, newAcc, newRef, newAtExp, newRtExp)
-
 		c.SetCookie("refresh_token", newRef, 3600*24*7, "/", "localhost", false, true)
-		c.JSON(200, gin.H{"accessToken": newAcc, "status": "rotated"})
 
+		expiresIn := int(time.Until(newAtExp).Seconds())
+		c.JSON(200, gin.H{
+			"accessToken":  newAcc,
+			"refreshToken": newRef,
+			"expiresIn":    expiresIn,
+			"status":       "rotated",
+		})
 	} else {
-
 		newAcc, newAtExp, _ := utils.GenerateAccessTokenOnly(user.ID, user.Role, user.CanCRUD)
-
 		repository.UpdateAccessTokenOnly(user.ID, newAcc, newAtExp)
 
-		c.JSON(200, gin.H{"accessToken": newAcc, "status": "refreshed"})
+		expiresIn := int(time.Until(newAtExp).Seconds())
+		c.JSON(200, gin.H{
+			"accessToken": newAcc,
+			"expiresIn":   expiresIn,
+			"status":      "refreshed",
+		})
 	}
 }
 

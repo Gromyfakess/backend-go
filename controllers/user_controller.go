@@ -16,6 +16,39 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
+// --- HELPER FUNCTION ---
+
+// deleteOldAvatar: Menghapus file foto lama dari server
+func deleteOldAvatar(avatarURL string) {
+	// 1. Cek apakah ini file lokal (disimpan di folder uploads backend)
+	// Jika URL-nya "https://i.pravatar.cc/..." (eksternal), jangan dihapus.
+	if !strings.Contains(avatarURL, "/uploads/") {
+		return
+	}
+
+	// 2. Cek apakah ini Default Avatar (JANGAN DIHAPUS)
+	// Pastikan nama file default Anda sesuai (misal: default-avatar.png atau default-avatar.jpg)
+	if strings.Contains(avatarURL, "default-avatar") {
+		return
+	}
+
+	// 3. Ambil nama file dari URL
+	// Contoh: http://localhost:8080/uploads/171552..._avatar.jpg
+	// Kita ambil bagian terakhir setelah garis miring: "171552..._avatar.jpg"
+	parts := strings.Split(avatarURL, "/")
+	fileName := parts[len(parts)-1]
+
+	// 4. Hapus file fisik
+	filePath := filepath.Join("uploads", fileName)
+	err := os.Remove(filePath)
+	if err != nil {
+		// Log error kecil saja, jangan hentikan proses program
+		fmt.Println("Warning: Gagal menghapus foto lama:", fileName, err)
+	} else {
+		fmt.Println("Berhasil menghapus foto lama:", fileName)
+	}
+}
+
 // --- PUBLIC / AUTHENTICATED USER HANDLERS ---
 
 // GetMe: Mengambil data user yang sedang login
@@ -56,8 +89,12 @@ func UpdateMe(c *gin.Context) {
 	user.Name = i.Name
 	user.Phone = i.Phone
 
-	// Update avatar jika dikirim string URL-nya
+	// LOGIKA BARU: Update avatar & Hapus yang lama
 	if i.AvatarURL != "" {
+		// Jika avatar baru BEDA dengan yang lama, hapus yang lama
+		if user.AvatarURL != "" && user.AvatarURL != i.AvatarURL {
+			deleteOldAvatar(user.AvatarURL)
+		}
 		user.AvatarURL = i.AvatarURL
 	}
 
@@ -67,7 +104,7 @@ func UpdateMe(c *gin.Context) {
 		user.PasswordHash = p
 	}
 
-	// 4. Simpan ke database
+	// Simpan ke database
 	if err := repository.UpdateUser(&user); err != nil {
 		c.JSON(500, gin.H{"error": "Failed to update profile"})
 		return
@@ -78,7 +115,7 @@ func UpdateMe(c *gin.Context) {
 
 // UploadFile: Upload gambar avatar dengan keamanan ketat (Anti-Webshell)
 func UploadFile(c *gin.Context) {
-	// 1. Batasi Ukuran File (Max 2MB)
+	// Batasan Ukuran File (Max 2MB)
 	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, 2<<20)
 
 	// Ambil file dari form-data
@@ -112,7 +149,7 @@ func UploadFile(c *gin.Context) {
 		return
 	}
 
-	// Reset pointer file kembali ke awal agar bisa disimpan utuh nanti
+	// Reset pointer file kembali ke awal agar bisa disimpan utuh nanti fotonya
 	src.Seek(0, 0)
 
 	contentType := http.DetectContentType(buffer)
@@ -122,7 +159,7 @@ func UploadFile(c *gin.Context) {
 		return
 	}
 
-	// Sanitasi & Rename Nama File (Mencegah Path Traversal & Overwrite)
+	// Sanitasi & Rename Nama File
 	filename := fmt.Sprintf("%d_%s%s", time.Now().UnixNano(), "avatar", ext)
 	savePath := filepath.Join("uploads", filename)
 
@@ -138,12 +175,10 @@ func UploadFile(c *gin.Context) {
 	}
 
 	backendURL := "http://localhost:8080"
-
 	if envURL := os.Getenv("BACKEND_URL"); envURL != "" {
 		backendURL = envURL
 	}
 
-	// URL Static File
 	fullURL := fmt.Sprintf("%s/uploads/%s", backendURL, filename)
 
 	c.JSON(200, gin.H{"url": fullURL})
@@ -171,7 +206,7 @@ func UpdateAvailability(c *gin.Context) {
 	c.JSON(200, gin.H{"status": "ok"})
 }
 
-// --- ADMIN HANDLERS (CRUD Users) ---
+// --- ADMIN HANDLERS ---
 
 func GetAllUsers(c *gin.Context) {
 	users := repository.GetAllUsers()
@@ -188,13 +223,14 @@ func CreateUser(c *gin.Context) {
 	// Hash password sebelum disimpan
 	p, _ := utils.HashPassword(i.Password)
 
-	baseURL := os.Getenv("BACKEND_URL")
-	if baseURL == "" {
-		baseURL = "http://localhost:8080"
+	backendURL := "http://localhost:8080"
+	if envURL := os.Getenv("BACKEND_URL"); envURL != "" {
+		backendURL = envURL
 	}
 
-	defaultAvatar := fmt.Sprintf("%s/uploads/default-avatar.jpg", baseURL)
+	defaultAvatar := fmt.Sprintf("%s/uploads/default-avatar.jpg", backendURL)
 
+	// Jika admin upload avatar khusus saat create, pakai yg itu
 	if i.AvatarURL != "" {
 		defaultAvatar = i.AvatarURL
 	}
@@ -208,7 +244,7 @@ func CreateUser(c *gin.Context) {
 		CanCRUD:      i.CanCRUD,
 		PasswordHash: p,
 		Availability: "Offline",
-		AvatarURL:    defaultAvatar,
+		AvatarURL:    defaultAvatar, // Pakai default avatar lokal kalo misalnya gak diisi
 	}
 
 	if err := repository.CreateUser(&u); err != nil {
@@ -233,13 +269,21 @@ func UpdateUser(c *gin.Context) {
 		return
 	}
 
-	// Admin berhak update semua field
+	// Admin bisa update semua field
 	user.Name = i.Name
 	user.Email = i.Email
 	user.Role = i.Role
 	user.Unit = i.Unit
-	user.Phone = i.Phone // <--- Update Phone
+	user.Phone = i.Phone
 	user.CanCRUD = i.CanCRUD
+
+	// Hapus foto lama jika admin mengganti foto user
+	if i.AvatarURL != "" {
+		if user.AvatarURL != "" && user.AvatarURL != i.AvatarURL {
+			deleteOldAvatar(user.AvatarURL)
+		}
+		user.AvatarURL = i.AvatarURL
+	}
 
 	// Update password hanya jika admin mengisi field password
 	if i.Password != "" {
@@ -255,8 +299,16 @@ func UpdateUser(c *gin.Context) {
 }
 
 func DeleteUser(c *gin.Context) {
-	id := c.Param("id")
-	if err := repository.DeleteUser(id); err != nil {
+	idStr := c.Param("id")
+
+	// Sebelum delete user, hapus foto profil biar bersih
+	id, _ := strconv.Atoi(idStr)
+	user, err := repository.GetUserByID(uint(id))
+	if err == nil {
+		deleteOldAvatar(user.AvatarURL)
+	}
+
+	if err := repository.DeleteUser(idStr); err != nil {
 		c.JSON(500, gin.H{"error": "Failed to delete user"})
 		return
 	}

@@ -38,11 +38,9 @@ func AuthMiddleware() gin.HandlerFunc {
 
 		userID := uint(claims["user_id"].(float64))
 
-		// 2. CEK DATABASE (Single Session Enforcer)
 		// Memastikan token ini adalah token yang paling baru di DB
 		isValidInDB := repository.CheckAccessTokenValid(userID, tokenString)
 		if !isValidInDB {
-			// Token di header beda dengan di DB (User sudah login di tempat lain / Admin revoke)
 			c.AbortWithStatusJSON(401, gin.H{"error": "Session revoked or expired"})
 			return
 		}

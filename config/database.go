@@ -13,7 +13,6 @@ import (
 var DB *gorm.DB
 
 func ConnectDB() {
-	// Ambil data dari .env
 	user := os.Getenv("DB_USER")
 	pass := os.Getenv("DB_PASSWORD")
 	host := os.Getenv("DB_HOST")
