@@ -34,7 +34,7 @@ type WorkOrder struct {
 	Priority    string `json:"priority"`
 	Status      string `json:"status"`
 	Unit        string `json:"unit"`
-	PhotoURL    string `json:"photo"` // Kolom Baru: Foto Bukti
+	PhotoURL    string `json:"photo"`
 
 	RequesterID   uint   `json:"requesterId"`
 	RequesterName string `json:"requester"`
@@ -42,6 +42,16 @@ type WorkOrder struct {
 
 	AssigneeID *uint `json:"assigneeId"`
 	Assignee   User  `json:"assignee" gorm:"foreignKey:AssigneeID"`
+
+	// === FIELD BARU UNTUK TRACKING ===
+	TakenAt     *time.Time `json:"taken_at"`     // Waktu saat status berubah jadi In Progress
+	CompletedAt *time.Time `json:"completed_at"` // Waktu saat status berubah jadi Completed
+
+	CompletedByID *uint `json:"completedById"` // ID staff yang menyelesaikan
+	CompletedBy   User  `json:"completedBy" gorm:"foreignKey:CompletedByID"`
+
+	CompletionNote string `json:"completion_note"` // Catatan dari staff saat finalize
+	// ================================
 
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
@@ -90,4 +100,8 @@ type AssignRequest struct {
 
 type AvailabilityRequest struct {
 	Status string `json:"status" binding:"required"`
+}
+
+type FinalizeRequest struct {
+	Note string `json:"note"`
 }

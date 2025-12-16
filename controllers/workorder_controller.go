@@ -12,7 +12,7 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// Helper untuk log
+// Helper untuk mencatat Log Aktivitas ke Database
 func logActivity(userID uint, userName, action, details, status string) {
 	newLog := models.ActivityLog{
 		UserID:    userID,
@@ -25,12 +25,13 @@ func logActivity(userID uint, userName, action, details, status string) {
 	repository.CreateActivityLog(&newLog)
 }
 
-// HANDLER BARU: Get Activities (Solusi Error 404)
+// GetActivities: Mengambil log aktivitas terbaru untuk Dashboard
 func GetActivities(c *gin.Context) {
 	logs := repository.GetRecentActivities()
 	c.JSON(200, logs)
 }
 
+// CreateWorkOrder: Membuat tiket baru
 func CreateWorkOrder(c *gin.Context) {
 	var input models.WorkOrderRequest
 	if err := c.ShouldBindJSON(&input); err != nil {
@@ -42,6 +43,7 @@ func CreateWorkOrder(c *gin.Context) {
 	role, _ := c.Get("role")
 	canCRUD, _ := c.Get("canCRUD")
 
+	// Validasi Permission: Hanya Admin atau Staff dengan 'canCRUD' yang boleh buat
 	if role != "Admin" && canCRUD == false {
 		c.JSON(403, gin.H{"error": "Permission denied"})
 		return
@@ -50,7 +52,7 @@ func CreateWorkOrder(c *gin.Context) {
 	requester, _ := repository.GetUserByID(uid.(uint))
 	unit := input.Unit
 	if role != "Admin" {
-		unit = requester.Unit
+		unit = requester.Unit // User biasa hanya bisa buat tiket untuk unitnya sendiri
 	}
 
 	newOrder := models.WorkOrder{
@@ -60,7 +62,7 @@ func CreateWorkOrder(c *gin.Context) {
 		RequesterID:   requester.ID,
 		RequesterName: requester.Name,
 		Unit:          unit,
-		PhotoURL:      input.PhotoURL, // Simpan Foto
+		PhotoURL:      input.PhotoURL,
 		Status:        "Pending",
 		CreatedAt:     time.Now(),
 		UpdatedAt:     time.Now(),
@@ -74,53 +76,47 @@ func CreateWorkOrder(c *gin.Context) {
 	// LOG AKTIVITAS
 	logActivity(requester.ID, requester.Name, "telah membuat request:", newOrder.Title, "Pending")
 
+	// Return full object response
 	fullOrder, _ := repository.GetWorkOrderById(strconv.Itoa(int(newOrder.ID)))
 	c.JSON(201, fullOrder)
 }
 
+// UploadWorkOrderEvidence: Upload foto bukti tiket
 func UploadWorkOrderEvidence(c *gin.Context) {
-	// 1. Ambil file dari form-data
 	file, err := c.FormFile("file")
 	if err != nil {
 		c.JSON(400, gin.H{"error": "No file uploaded"})
 		return
 	}
 
-	// 2. Tentukan folder tujuan: uploads/workorder
-	// Pastikan folder ini ada, jika tidak buat foldernya
 	uploadPath := "uploads/workorder"
 	if _, err := os.Stat(uploadPath); os.IsNotExist(err) {
 		os.MkdirAll(uploadPath, os.ModePerm)
 	}
 
-	// 3. Buat nama file unik (Timestamp + OriginalName) agar tidak bentrok
-	// Gunakan filepath.Base untuk keamanan (menghindari path traversal)
+	// Nama file unik
 	filename := fmt.Sprintf("%d_%s", time.Now().UnixNano(), filepath.Base(file.Filename))
 	dst := filepath.Join(uploadPath, filename)
 
-	// 4. Simpan file
 	if err := c.SaveUploadedFile(file, dst); err != nil {
 		c.JSON(500, gin.H{"error": "Failed to save file"})
 		return
 	}
 
-	// 5. Generate URL Publik
-	// Karena di main.go folder "uploads" di-serve sebagai static,
-	// URL-nya menjadi /uploads/workorder/namafile
-	// (Perhatikan slash '/' manual agar kompatibel dengan URL browser)
 	fileURL := "/uploads/workorder/" + filename
-
 	c.JSON(200, gin.H{
 		"message": "File uploaded successfully",
 		"url":     fileURL,
 	})
 }
 
+// GetWorkOrders: Mengambil semua tiket
 func GetWorkOrders(c *gin.Context) {
 	orders := repository.GetAllWorkOrders()
 	c.JSON(200, orders)
 }
 
+// UpdateWorkOrder: Edit tiket (Judul, Deskripsi, dll)
 func UpdateWorkOrder(c *gin.Context) {
 	id := c.Param("id")
 	var input models.WorkOrderRequest
@@ -132,7 +128,6 @@ func UpdateWorkOrder(c *gin.Context) {
 	uid, _ := c.Get("userID")
 	role, _ := c.Get("role")
 
-	// Fetch data User/Admin yang sedang melakukan aksi untuk dicatat namanya di log
 	actorID := uid.(uint)
 	actor, _ := repository.GetUserByID(actorID)
 
@@ -142,7 +137,7 @@ func UpdateWorkOrder(c *gin.Context) {
 		return
 	}
 
-	// Hanya Admin atau Pemilik Tiket yang boleh edit
+	// Permission: Hanya Admin atau Pemilik Tiket yang boleh edit
 	if role != "Admin" && order.RequesterID != actorID {
 		c.JSON(403, gin.H{"error": "Forbidden"})
 		return
@@ -162,17 +157,17 @@ func UpdateWorkOrder(c *gin.Context) {
 
 	repository.UpdateWorkOrder(&order)
 
-	// Menentukan pesan aksi berdasarkan Role
+	// LOG AKTIVITAS (Update)
 	actionMsg := "memperbarui tiket:"
 	if role == "Admin" {
-		actionMsg = "[Admin] memperbarui data:"
+		actionMsg = "Admin memperbarui data:"
 	}
-
 	logActivity(actor.ID, actor.Name, actionMsg, order.Title, order.Status)
 
 	c.JSON(200, order)
 }
 
+// DeleteWorkOrder: Hapus tiket
 func DeleteWorkOrder(c *gin.Context) {
 	id := c.Param("id")
 	uid, _ := c.Get("userID")
@@ -193,6 +188,7 @@ func DeleteWorkOrder(c *gin.Context) {
 	c.JSON(200, gin.H{"message": "Deleted"})
 }
 
+// TakeRequest: Staff mengambil tiket sendiri
 func TakeRequest(c *gin.Context) {
 	id := c.Param("id")
 	uid, _ := c.Get("userID")
@@ -205,15 +201,21 @@ func TakeRequest(c *gin.Context) {
 		return
 	}
 
+	now := time.Now() // Waktu mulai pengerjaan
+
 	order.AssigneeID = &userID
 	order.Status = "In Progress"
+	order.TakenAt = &now // Simpan waktu TakenAt
+
 	repository.UpdateWorkOrder(&order)
 
+	// LOG AKTIVITAS
 	logActivity(user.ID, user.Name, "sedang mengerjakan:", order.Title, "In Progress")
 
 	c.JSON(200, gin.H{"message": "Taken"})
 }
 
+// AssignStaff: Admin menugaskan tiket ke staff lain
 func AssignStaff(c *gin.Context) {
 	id := c.Param("id")
 	uid, _ := c.Get("userID")
@@ -231,8 +233,12 @@ func AssignStaff(c *gin.Context) {
 		return
 	}
 
+	now := time.Now()
+
 	order.AssigneeID = &i.AssigneeID
 	order.Status = "In Progress"
+	order.TakenAt = &now // Simpan waktu TakenAt
+
 	repository.UpdateWorkOrder(&order)
 
 	// LOG AKTIVITAS
@@ -241,21 +247,34 @@ func AssignStaff(c *gin.Context) {
 	c.JSON(200, gin.H{"message": "Assigned"})
 }
 
+// FinalizeOrder: Menyelesaikan tiket dengan catatan
 func FinalizeOrder(c *gin.Context) {
 	id := c.Param("id")
 	uid, _ := c.Get("userID")
 	user, _ := repository.GetUserByID(uid.(uint))
+
+	// Ambil Note dari body request (models.FinalizeRequest harus ada di models.go)
+	var input models.FinalizeRequest
+	if err := c.ShouldBindJSON(&input); err != nil {
+		// Note opsional, lanjut saja jika kosong/error binding
+	}
 
 	order, err := repository.GetWorkOrderById(id)
 	if err != nil {
 		c.JSON(404, gin.H{"error": "Not found"})
 		return
 	}
+
+	now := time.Now()
+
 	order.Status = "Completed"
+	order.CompletedAt = &now
+	order.CompletedByID = &user.ID
+	order.CompletionNote = input.Note
+
 	repository.UpdateWorkOrder(&order)
 
-	// LOG AKTIVITAS
-	logActivity(user.ID, user.Name, "telah menyelesaikan:", order.Title, "Completed")
+	logActivity(user.ID, user.Name, "telah menyelesaikan tiket:", order.Title, "Completed")
 
 	c.JSON(200, gin.H{"message": "Done"})
 }
