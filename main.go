@@ -55,6 +55,7 @@ func main() {
 		api.GET("/staff", controllers.GetStaffList)
 		api.PATCH("/staff/:id/availability", controllers.UpdateAvailability)
 
+		// User biasa CRUD workorders (tetap di root /workorders)
 		api.GET("/workorders", controllers.GetWorkOrders)
 		api.POST("/workorders", controllers.CreateWorkOrder)
 		api.PUT("/workorders/:id", controllers.UpdateWorkOrder)
@@ -68,13 +69,22 @@ func main() {
 
 		api.GET("/activities", controllers.GetActivities)
 
-		users := api.Group("/users")
-		users.Use(middleware.AdminOnly())
+		// === ADMIN ROUTES ===
+		// Semua rute admin dikelompokkan di bawah /admin
+		admin := api.Group("/admin")
+		admin.Use(middleware.AdminOnly())
 		{
-			users.GET("", controllers.GetAllUsers)
-			users.POST("", controllers.CreateUser)
-			users.PUT("/:id", controllers.UpdateUser)
-			users.DELETE("/:id", controllers.DeleteUser)
+			// Manajemen User
+			admin.GET("/users", controllers.GetAllUsers)       // GET /admin/users
+			admin.POST("/users", controllers.CreateUser)       // POST /admin/users
+			admin.PUT("/users/:id", controllers.UpdateUser)    // PUT /admin/users/:id
+			admin.DELETE("/users/:id", controllers.DeleteUser) // DELETE /admin/users/:id
+
+			// Manajemen Workorder Admin (Opsional, jika ingin memisahkan view admin)
+			admin.GET("/workorders", controllers.GetWorkOrders)
+			admin.POST("/workorders", controllers.CreateWorkOrder)
+			admin.PUT("/workorders/:id", controllers.UpdateWorkOrder)
+			admin.DELETE("/workorders/:id", controllers.DeleteWorkOrder)
 		}
 	}
 

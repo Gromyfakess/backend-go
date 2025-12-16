@@ -132,13 +132,18 @@ func UpdateWorkOrder(c *gin.Context) {
 	uid, _ := c.Get("userID")
 	role, _ := c.Get("role")
 
+	// Fetch data User/Admin yang sedang melakukan aksi untuk dicatat namanya di log
+	actorID := uid.(uint)
+	actor, _ := repository.GetUserByID(actorID)
+
 	order, err := repository.GetWorkOrderById(id)
 	if err != nil {
 		c.JSON(404, gin.H{"error": "Not found"})
 		return
 	}
 
-	if role != "Admin" && order.RequesterID != uid.(uint) {
+	// Hanya Admin atau Pemilik Tiket yang boleh edit
+	if role != "Admin" && order.RequesterID != actorID {
 		c.JSON(403, gin.H{"error": "Forbidden"})
 		return
 	}
@@ -156,6 +161,15 @@ func UpdateWorkOrder(c *gin.Context) {
 	}
 
 	repository.UpdateWorkOrder(&order)
+
+	// Menentukan pesan aksi berdasarkan Role
+	actionMsg := "memperbarui tiket:"
+	if role == "Admin" {
+		actionMsg = "[Admin] memperbarui data:"
+	}
+
+	logActivity(actor.ID, actor.Name, actionMsg, order.Title, order.Status)
+
 	c.JSON(200, order)
 }
 
@@ -195,7 +209,6 @@ func TakeRequest(c *gin.Context) {
 	order.Status = "In Progress"
 	repository.UpdateWorkOrder(&order)
 
-	// LOG AKTIVITAS
 	logActivity(user.ID, user.Name, "sedang mengerjakan:", order.Title, "In Progress")
 
 	c.JSON(200, gin.H{"message": "Taken"})
