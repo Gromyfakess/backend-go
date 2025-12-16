@@ -20,8 +20,6 @@ import (
 
 // deleteOldAvatar: Menghapus file foto lama dari server
 func deleteOldAvatar(avatarURL string) {
-	// 1. Cek apakah ini file lokal (disimpan di folder uploads backend)
-	// Jika URL-nya "https://i.pravatar.cc/..." (eksternal), jangan dihapus.
 	if !strings.Contains(avatarURL, "/uploads/") {
 		return
 	}

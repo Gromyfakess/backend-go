@@ -37,8 +37,6 @@ func main() {
 		AllowCredentials: true,
 	}))
 
-	// STATIC FILE SERVING (Agar gambar yang diupload bisa dibuka)
-	// http://localhost:8080/uploads/namafile.jpg
 	r.Static("/uploads", "./uploads")
 
 	// Public Routes
@@ -54,21 +52,22 @@ func main() {
 		api.PUT("/me", controllers.UpdateMe)
 		api.POST("/upload", controllers.UploadFile)
 
-		// Staff & Status
 		api.GET("/staff", controllers.GetStaffList)
 		api.PATCH("/staff/:id/availability", controllers.UpdateAvailability)
 
-		// Work Order
 		api.GET("/workorders", controllers.GetWorkOrders)
 		api.POST("/workorders", controllers.CreateWorkOrder)
 		api.PUT("/workorders/:id", controllers.UpdateWorkOrder)
 		api.DELETE("/workorders/:id", controllers.DeleteWorkOrder)
 
+		api.POST("/upload/workorder", controllers.UploadWorkOrderEvidence)
+
 		api.PATCH("/workorders/:id/take", controllers.TakeRequest)
 		api.PATCH("/workorders/:id/assign", controllers.AssignStaff)
 		api.PATCH("/workorders/:id/finalize", controllers.FinalizeOrder)
 
-		// Admin User Management
+		api.GET("/activities", controllers.GetActivities)
+
 		users := api.Group("/users")
 		users.Use(middleware.AdminOnly())
 		{

@@ -17,7 +17,7 @@ type User struct {
 	CreatedAt    time.Time `json:"-"`
 }
 
-// UserToken: Tabel sesi
+// UserToken
 type UserToken struct {
 	UserID       uint   `gorm:"primaryKey"`
 	AccessToken  string `gorm:"type:text"`
@@ -26,24 +26,36 @@ type UserToken struct {
 	RTExpiresAt  time.Time
 }
 
-// WorkOrder: Tabel request/tiket
+// WorkOrder (Updated)
 type WorkOrder struct {
-	ID            uint   `json:"id" gorm:"primaryKey"`
-	Title         string `json:"title"`
-	Description   string `json:"description"`
-	Priority      string `json:"priority"`
-	Status        string `json:"status"`
-	Unit          string `json:"unit"`
+	ID          uint   `json:"id" gorm:"primaryKey"`
+	Title       string `json:"title"`
+	Description string `json:"description"`
+	Priority    string `json:"priority"`
+	Status      string `json:"status"`
+	Unit        string `json:"unit"`
+	PhotoURL    string `json:"photo"` // Kolom Baru: Foto Bukti
+
 	RequesterID   uint   `json:"requesterId"`
 	RequesterName string `json:"requester"`
-	// Relasi ke User
-	RequesterData User `json:"requesterData" gorm:"foreignKey:RequesterID"`
+	RequesterData User   `json:"requesterData" gorm:"foreignKey:RequesterID"`
 
 	AssigneeID *uint `json:"assigneeId"`
 	Assignee   User  `json:"assignee" gorm:"foreignKey:AssigneeID"`
 
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
+}
+
+// ActivityLog (Tabel Baru)
+type ActivityLog struct {
+	ID        uint      `json:"id" gorm:"primaryKey"`
+	UserID    uint      `json:"userId"`
+	UserName  string    `json:"userName"`
+	Action    string    `json:"action"`  // e.g., "telah membuat request"
+	Details   string    `json:"details"` // e.g., "Troubleshooting CCTV"
+	Status    string    `json:"status"`  // e.g., "Pending", "Completed"
+	Timestamp time.Time `json:"timestamp"`
 }
 
 // --- Request Structs ---
@@ -58,6 +70,7 @@ type WorkOrderRequest struct {
 	Description string `json:"description"`
 	Priority    string `json:"priority" binding:"required"`
 	Unit        string `json:"unit"`
+	PhotoURL    string `json:"photo"` // Input baru
 }
 
 type UserRequest struct {
