@@ -31,10 +31,10 @@ type WorkOrder struct {
 	ID          uint   `json:"id" gorm:"primaryKey"`
 	Title       string `json:"title"`
 	Description string `json:"description"`
-	Priority    string `json:"priority"`
-	Status      string `json:"status"`
-	Unit        string `json:"unit"`
-	PhotoURL    string `json:"photo"`
+	Priority    string `json:"priority"` // High, Medium, Low
+	Status      string `json:"status"`   // Pending, In Progress, Completed
+	Unit        string `json:"unit"`     // Unit asal pelapor
+	PhotoURL    string `json:"photo"`    // Bukti Foto
 
 	RequesterID   uint   `json:"requesterId"`
 	RequesterName string `json:"requester"`
@@ -44,11 +44,10 @@ type WorkOrder struct {
 	Assignee   User  `json:"assignee" gorm:"foreignKey:AssigneeID"`
 
 	// === FIELD BARU UNTUK TRACKING ===
-	TakenAt     *time.Time `json:"taken_at"`     // Waktu saat status berubah jadi In Progress
-	CompletedAt *time.Time `json:"completed_at"` // Waktu saat status berubah jadi Completed
-
-	CompletedByID *uint `json:"completedById"` // ID staff yang menyelesaikan
-	CompletedBy   User  `json:"completedBy" gorm:"foreignKey:CompletedByID"`
+	TakenAt       *time.Time `json:"taken_at"`      // Waktu saat status berubah jadi In Progress
+	CompletedAt   *time.Time `json:"completed_at"`  // Waktu saat status berubah jadi Completed
+	CompletedByID *uint      `json:"completedById"` // ID staff yang menyelesaikan
+	CompletedBy   User       `json:"completedBy" gorm:"foreignKey:CompletedByID"`
 
 	CompletionNote string `json:"completion_note"` // Catatan dari staff saat finalize
 	// ================================
@@ -62,9 +61,9 @@ type ActivityLog struct {
 	ID        uint      `json:"id" gorm:"primaryKey"`
 	UserID    uint      `json:"userId"`
 	UserName  string    `json:"userName"`
-	Action    string    `json:"action"`  // e.g., "telah membuat request"
-	Details   string    `json:"details"` // e.g., "Troubleshooting CCTV"
-	Status    string    `json:"status"`  // e.g., "Pending", "Completed"
+	Action    string    `json:"action"`  // "created", "updated", "completed"
+	Details   string    `json:"details"` // Judul tiket atau info tambahan
+	Status    string    `json:"status"`  // Status tiket saat itu
 	Timestamp time.Time `json:"timestamp"`
 }
 
