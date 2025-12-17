@@ -116,78 +116,6 @@ func GetWorkOrders(c *gin.Context) {
 	c.JSON(200, orders)
 }
 
-// UpdateWorkOrder: Edit tiket (Judul, Deskripsi, dll)
-func UpdateWorkOrder(c *gin.Context) {
-	id := c.Param("id")
-	var input models.WorkOrderRequest
-	if err := c.ShouldBindJSON(&input); err != nil {
-		c.JSON(400, gin.H{"error": "Invalid input"})
-		return
-	}
-
-	uid, _ := c.Get("userID")
-	role, _ := c.Get("role")
-
-	actorID := uid.(uint)
-	actor, _ := repository.GetUserByID(actorID)
-
-	order, err := repository.GetWorkOrderById(id)
-	if err != nil {
-		c.JSON(404, gin.H{"error": "Not found"})
-		return
-	}
-
-	// Permission: Hanya Admin atau Pemilik Tiket yang boleh edit
-	if role != "Admin" && order.RequesterID != actorID {
-		c.JSON(403, gin.H{"error": "Forbidden"})
-		return
-	}
-
-	order.Title = input.Title
-	order.Description = input.Description
-	order.Priority = input.Priority
-
-	if input.PhotoURL != "" {
-		order.PhotoURL = input.PhotoURL
-	}
-
-	if role == "Admin" {
-		order.Unit = input.Unit
-	}
-
-	repository.UpdateWorkOrder(&order)
-
-	// LOG AKTIVITAS (Update)
-	actionMsg := "memperbarui tiket:"
-	if role == "Admin" {
-		actionMsg = "Admin memperbarui data:"
-	}
-	logActivity(actor.ID, actor.Name, actionMsg, order.Title, order.Status)
-
-	c.JSON(200, order)
-}
-
-// DeleteWorkOrder: Hapus tiket
-func DeleteWorkOrder(c *gin.Context) {
-	id := c.Param("id")
-	uid, _ := c.Get("userID")
-	role, _ := c.Get("role")
-
-	order, err := repository.GetWorkOrderById(id)
-	if err != nil {
-		c.JSON(404, gin.H{"error": "Not found"})
-		return
-	}
-
-	if role != "Admin" && order.RequesterID != uid.(uint) {
-		c.JSON(403, gin.H{"error": "Forbidden"})
-		return
-	}
-
-	repository.DeleteWorkOrder(&order)
-	c.JSON(200, gin.H{"message": "Deleted"})
-}
-
 // TakeRequest: Staff mengambil tiket sendiri
 func TakeRequest(c *gin.Context) {
 	id := c.Param("id")
@@ -253,10 +181,10 @@ func FinalizeOrder(c *gin.Context) {
 	uid, _ := c.Get("userID")
 	user, _ := repository.GetUserByID(uid.(uint))
 
-	// Ambil Note dari body request (models.FinalizeRequest harus ada di models.go)
+	// Ambil Note dari body request
 	var input models.FinalizeRequest
 	if err := c.ShouldBindJSON(&input); err != nil {
-		// Note opsional, lanjut saja jika kosong/error binding
+		// Note opsional
 	}
 
 	order, err := repository.GetWorkOrderById(id)
