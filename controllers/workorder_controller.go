@@ -143,7 +143,7 @@ func TakeRequest(c *gin.Context) {
 	c.JSON(200, gin.H{"message": "Taken"})
 }
 
-// AssignStaff: Admin menugaskan tiket ke staff lain
+// AssignStaff: Admin menugaskan request ke staff lain
 func AssignStaff(c *gin.Context) {
 	id := c.Param("id")
 	uid, _ := c.Get("userID")
@@ -155,9 +155,15 @@ func AssignStaff(c *gin.Context) {
 		return
 	}
 
+	assignee, err := repository.GetUserByID(i.AssigneeID)
+	if err != nil {
+		c.JSON(404, gin.H{"error": "Staff not found"})
+		return
+	}
+
 	order, err := repository.GetWorkOrderById(id)
 	if err != nil {
-		c.JSON(404, gin.H{"error": "Not found"})
+		c.JSON(404, gin.H{"error": "Work order not found"})
 		return
 	}
 
@@ -165,12 +171,12 @@ func AssignStaff(c *gin.Context) {
 
 	order.AssigneeID = &i.AssigneeID
 	order.Status = "In Progress"
-	order.TakenAt = &now // Simpan waktu TakenAt
+	order.TakenAt = &now
 
 	repository.UpdateWorkOrder(&order)
 
-	// LOG AKTIVITAS
-	logActivity(admin.ID, admin.Name, "menugaskan tiket:", order.Title, "In Progress")
+	logMessage := fmt.Sprintf("menugaskan tiket kepada %s:", assignee.Name)
+	logActivity(admin.ID, admin.Name, logMessage, order.Title, "In Progress")
 
 	c.JSON(200, gin.H{"message": "Assigned"})
 }

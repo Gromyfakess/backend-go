@@ -11,15 +11,20 @@ func CreateWorkOrder(wo *models.WorkOrder) error {
 
 func GetWorkOrderById(id string) (models.WorkOrder, error) {
 	var wo models.WorkOrder
-	// Preload Assignee DAN RequesterData (untuk ambil avatar user)
-	err := config.DB.Preload("Assignee").Preload("RequesterData").First(&wo, id).Error
+	err := config.DB.Preload("Assignee").
+		Preload("RequesterData").
+		Preload("CompletedBy").
+		First(&wo, id).Error
 	return wo, err
 }
 
 func GetAllWorkOrders() []models.WorkOrder {
 	var wos []models.WorkOrder
-	// Preload Assignee DAN RequesterData
-	config.DB.Preload("Assignee").Preload("RequesterData").Order("created_at desc").Find(&wos)
+	config.DB.Preload("Assignee").
+		Preload("RequesterData").
+		Preload("CompletedBy").
+		Order("created_at desc").
+		Find(&wos)
 	return wos
 }
 
