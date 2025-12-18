@@ -61,9 +61,10 @@ type ActivityLog struct {
 	ID        uint      `json:"id" gorm:"primaryKey"`
 	UserID    uint      `json:"userId"`
 	UserName  string    `json:"userName"`
-	Action    string    `json:"action"`  // "created", "updated", "completed"
-	Details   string    `json:"details"` // Judul tiket atau info tambahan
-	Status    string    `json:"status"`  // Status tiket saat itu
+	Action    string    `json:"action"`
+	RequestID uint      `json:"requestId"`
+	Details   string    `json:"details"`
+	Status    string    `json:"status"`
 	Timestamp time.Time `json:"timestamp"`
 }
 

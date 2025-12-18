@@ -13,13 +13,14 @@ import (
 )
 
 // Helper untuk mencatat Log Aktivitas ke Database
-func logActivity(userID uint, userName, action, details, status string) {
+func logActivity(userID uint, userName, action, details, status string, reqID uint) {
 	newLog := models.ActivityLog{
 		UserID:    userID,
 		UserName:  userName,
 		Action:    action,
 		Details:   details,
 		Status:    status,
+		RequestID: reqID,
 		Timestamp: time.Now(),
 	}
 	repository.CreateActivityLog(&newLog)
@@ -31,7 +32,7 @@ func GetActivities(c *gin.Context) {
 	c.JSON(200, logs)
 }
 
-// CreateWorkOrder: Membuat tiket baru
+// CreateWorkOrder: Membuat request baru
 func CreateWorkOrder(c *gin.Context) {
 	var input models.WorkOrderRequest
 	if err := c.ShouldBindJSON(&input); err != nil {
@@ -43,16 +44,17 @@ func CreateWorkOrder(c *gin.Context) {
 	role, _ := c.Get("role")
 	canCRUD, _ := c.Get("canCRUD")
 
-	// Validasi Permission: Hanya Admin atau Staff dengan 'canCRUD' yang boleh buat
+	// Validasi Permission
 	if role != "Admin" && canCRUD == false {
 		c.JSON(403, gin.H{"error": "Permission denied"})
 		return
 	}
 
 	requester, _ := repository.GetUserByID(uid.(uint))
-	unit := input.Unit
-	if role != "Admin" {
-		unit = requester.Unit // User biasa hanya bisa buat tiket untuk unitnya sendiri
+
+	if input.Unit == "" {
+		c.JSON(400, gin.H{"error": "Unit tujuan harus dipilih"})
+		return
 	}
 
 	newOrder := models.WorkOrder{
@@ -61,7 +63,7 @@ func CreateWorkOrder(c *gin.Context) {
 		Priority:      input.Priority,
 		RequesterID:   requester.ID,
 		RequesterName: requester.Name,
-		Unit:          unit,
+		Unit:          input.Unit, // Menggunakan Unit Tujuan dari Frontend
 		PhotoURL:      input.PhotoURL,
 		Status:        "Pending",
 		CreatedAt:     time.Now(),
@@ -73,15 +75,14 @@ func CreateWorkOrder(c *gin.Context) {
 		return
 	}
 
-	// LOG AKTIVITAS
-	logActivity(requester.ID, requester.Name, "telah membuat request:", newOrder.Title, "Pending")
+	logDesc := fmt.Sprintf("membuat request ke %s:", input.Unit)
+	logActivity(requester.ID, requester.Name, logDesc, newOrder.Title, "Pending", newOrder.ID)
 
-	// Return full object response
 	fullOrder, _ := repository.GetWorkOrderById(strconv.Itoa(int(newOrder.ID)))
 	c.JSON(201, fullOrder)
 }
 
-// UploadWorkOrderEvidence: Upload foto bukti tiket
+// UploadWorkOrderEvidence: Upload foto bukti untuk Request
 func UploadWorkOrderEvidence(c *gin.Context) {
 	file, err := c.FormFile("file")
 	if err != nil {
@@ -110,13 +111,13 @@ func UploadWorkOrderEvidence(c *gin.Context) {
 	})
 }
 
-// GetWorkOrders: Mengambil semua tiket
+// GetWorkOrders: Mengambil semua request
 func GetWorkOrders(c *gin.Context) {
 	orders := repository.GetAllWorkOrders()
 	c.JSON(200, orders)
 }
 
-// TakeRequest: Staff mengambil tiket sendiri
+// TakeRequest: Staff mengambil request sendiri
 func TakeRequest(c *gin.Context) {
 	id := c.Param("id")
 	uid, _ := c.Get("userID")
@@ -138,7 +139,7 @@ func TakeRequest(c *gin.Context) {
 	repository.UpdateWorkOrder(&order)
 
 	// LOG AKTIVITAS
-	logActivity(user.ID, user.Name, "sedang mengerjakan:", order.Title, "In Progress")
+	logActivity(user.ID, user.Name, "sedang mengerjakan:", order.Title, "In Progress", order.ID)
 
 	c.JSON(200, gin.H{"message": "Taken"})
 }
@@ -175,19 +176,20 @@ func AssignStaff(c *gin.Context) {
 
 	repository.UpdateWorkOrder(&order)
 
-	logMessage := fmt.Sprintf("menugaskan tiket kepada %s:", assignee.Name)
-	logActivity(admin.ID, admin.Name, logMessage, order.Title, "In Progress")
+	logMessage := fmt.Sprintf("menugaskan request kepada %s:", assignee.Name)
+	logActivity(admin.ID, admin.Name, logMessage, order.Title, "In Progress", order.ID)
 
 	c.JSON(200, gin.H{"message": "Assigned"})
 }
 
 // FinalizeOrder: Menyelesaikan tiket dengan catatan
+// FinalizeOrder: Menyelesaikan tiket dengan catatan
 func FinalizeOrder(c *gin.Context) {
 	id := c.Param("id")
 	uid, _ := c.Get("userID")
+	role, _ := c.Get("role")
 	user, _ := repository.GetUserByID(uid.(uint))
 
-	// Ambil Note dari body request
 	var input models.FinalizeRequest
 	if err := c.ShouldBindJSON(&input); err != nil {
 		// Note opsional
@@ -196,6 +198,18 @@ func FinalizeOrder(c *gin.Context) {
 	order, err := repository.GetWorkOrderById(id)
 	if err != nil {
 		c.JSON(404, gin.H{"error": "Not found"})
+		return
+	}
+
+	// 1. Cek apakah tiket sudah diambil?
+	if order.AssigneeID == nil {
+		c.JSON(400, gin.H{"error": "Tiket belum diambil (Take) oleh siapapun"})
+		return
+	}
+
+	// 2. Validasi: Hanya Assignee atau Admin yang boleh finalize
+	if *order.AssigneeID != user.ID && role != "Admin" {
+		c.JSON(403, gin.H{"error": "Anda tidak memiliki akses. Hanya staff yang mengerjakan tiket ini yang dapat menyelesaikannya."})
 		return
 	}
 
@@ -208,7 +222,7 @@ func FinalizeOrder(c *gin.Context) {
 
 	repository.UpdateWorkOrder(&order)
 
-	logActivity(user.ID, user.Name, "telah menyelesaikan tiket:", order.Title, "Completed")
+	logActivity(user.ID, user.Name, "telah menyelesaikan tiket:", order.Title, "Completed", order.ID)
 
 	c.JSON(200, gin.H{"message": "Done"})
 }
