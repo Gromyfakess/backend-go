@@ -1,6 +1,7 @@
 package controllers
 
 import (
+	"os"
 	"siro-backend/models"
 	"siro-backend/repository"
 	"siro-backend/utils"
@@ -38,7 +39,8 @@ func LoginHandler(c *gin.Context) {
 	repository.SaveAllTokens(user.ID, acc, ref, atExp, rtExp)
 
 	// PENTING: Set Cookie (untuk keamanan browser) DAN kirim JSON (untuk NextAuth)
-	c.SetCookie("refresh_token", ref, 3600*24*7, "/", "localhost", false, true)
+	isProduction := os.Getenv("APP_ENV") == "production"
+	c.SetCookie("refresh_token", ref, 3600*24*7, "/", "", isProduction, true)
 
 	// Sisa waktu Access Token
 	expiresIn := int(time.Until(atExp).Seconds())
@@ -92,7 +94,8 @@ func RefreshHandler(c *gin.Context) {
 		// Rotate: Access + Refresh
 		newAcc, newRef, newAtExp, newRtExp, _ := utils.GenerateAllTokens(user.ID, user.Role, user.CanCRUD)
 		repository.SaveAllTokens(user.ID, newAcc, newRef, newAtExp, newRtExp)
-		c.SetCookie("refresh_token", newRef, 3600*24*7, "/", "localhost", false, true)
+		isProduction := os.Getenv("APP_ENV") == "production"
+		c.SetCookie("refresh_token", newRef, 3600*24*7, "/", "", isProduction, true)
 
 		expiresIn := int(time.Until(newAtExp).Seconds())
 		c.JSON(200, gin.H{
@@ -115,6 +118,6 @@ func RefreshHandler(c *gin.Context) {
 }
 
 func LogoutHandler(c *gin.Context) {
-	c.SetCookie("refresh_token", "", -1, "/", "localhost", false, true)
+	c.SetCookie("refresh_token", "", -1, "/", "", false, true)
 	c.JSON(200, gin.H{"msg": "Logged out"})
 }
