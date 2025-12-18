@@ -2,10 +2,10 @@ package controllers
 
 import (
 	"fmt"
-	"os"
-	"path/filepath"
+	"net/http"
 	"siro-backend/models"
 	"siro-backend/repository"
+	"siro-backend/utils"
 	"strconv"
 	"time"
 
@@ -84,31 +84,24 @@ func CreateWorkOrder(c *gin.Context) {
 
 // UploadWorkOrderEvidence: Upload foto bukti untuk Request
 func UploadWorkOrderEvidence(c *gin.Context) {
+	// Batasan 5MB (Foto bukti mungkin lebih besar)
+	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, 5<<20)
+
 	file, err := c.FormFile("file")
 	if err != nil {
-		c.JSON(400, gin.H{"error": "No file uploaded"})
+		c.JSON(400, gin.H{"error": "File required"})
 		return
 	}
 
-	uploadPath := "uploads/workorder"
-	if _, err := os.Stat(uploadPath); os.IsNotExist(err) {
-		os.MkdirAll(uploadPath, os.ModePerm)
-	}
-
-	// Nama file unik
-	filename := fmt.Sprintf("%d_%s", time.Now().UnixNano(), filepath.Base(file.Filename))
-	dst := filepath.Join(uploadPath, filename)
-
-	if err := c.SaveUploadedFile(file, dst); err != nil {
-		c.JSON(500, gin.H{"error": "Failed to save file"})
+	// Upload ke folder khusus workorder di Cloudinary
+	imgURL, err := utils.UploadToCloudinary(file, "siro/workorders")
+	if err != nil {
+		fmt.Println("Cloudinary WO Upload Error:", err)
+		c.JSON(500, gin.H{"error": "Failed to upload evidence"})
 		return
 	}
 
-	fileURL := "/uploads/workorder/" + filename
-	c.JSON(200, gin.H{
-		"message": "File uploaded successfully",
-		"url":     fileURL,
-	})
+	c.JSON(200, gin.H{"url": imgURL})
 }
 
 // GetWorkOrders: Mengambil semua request

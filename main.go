@@ -1,13 +1,10 @@
 package main
 
 import (
-	"fmt"
-	"log"
 	"os"
 	"siro-backend/config"
 	"siro-backend/controllers"
 	"siro-backend/middleware"
-	"siro-backend/utils"
 
 	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
@@ -15,29 +12,21 @@ import (
 )
 
 func main() {
-	err := godotenv.Load()
-	if err != nil {
-		log.Println("Warning: .env file not found")
-	}
+	// 1. Load .env file (Hanya untuk local development)
+	// Di Leapcell, environment variable diset lewat dashboard, jadi error diabaikan
+	_ = godotenv.Load()
 
-	utils.InitJWT()
-	config.ConnectDB()
+	// 2. Connect ke Database (Neon DB via PostgreSQL Driver)
+	config.ConnectDatabase()
 
 	r := gin.Default()
 
-	frontendURL := os.Getenv("FRONTEND_URL")
-	if frontendURL == "" {
-		frontendURL = "http://localhost:3000"
-	}
-
-	r.Use(cors.New(cors.Config{
-		AllowOrigins:     []string{frontendURL},
-		AllowMethods:     []string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"},
-		AllowHeaders:     []string{"Authorization", "Content-Type"},
-		AllowCredentials: true,
-	}))
-
-	r.Static("/uploads", "./uploads")
+	// 3. Setup CORS (Penting agar Next.js bisa akses)
+	// Sesuaikan AllowOrigins dengan URL frontend Next.js Anda nanti
+	config := cors.DefaultConfig()
+	config.AllowAllOrigins = true
+	config.AllowHeaders = []string{"Origin", "Content-Length", "Content-Type", "Authorization"}
+	r.Use(cors.New(config))
 
 	// Public Routes
 	r.POST("/login", controllers.LoginHandler)
@@ -79,10 +68,10 @@ func main() {
 		}
 	}
 
+	// 5. Jalankan Server
 	port := os.Getenv("PORT")
 	if port == "" {
 		port = "8080"
 	}
-	fmt.Printf("Server running on port :%s\n", port)
-	r.Run(":" + port)
+	r.Run("0.0.0.0:" + port)
 }

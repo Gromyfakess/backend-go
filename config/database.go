@@ -6,33 +6,38 @@ import (
 	"os"
 	"siro-backend/models"
 
-	"gorm.io/driver/mysql"
+	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 )
 
 var DB *gorm.DB
 
-func ConnectDB() {
-	user := os.Getenv("DB_USER")
-	pass := os.Getenv("DB_PASSWORD")
-	host := os.Getenv("DB_HOST")
-	port := os.Getenv("DB_PORT")
-	name := os.Getenv("DB_NAME")
+func ConnectDatabase() {
+	// Ambil koneksi string dari Environment Variable (Diset di Dashboard Leapcell)
+	dsn := os.Getenv("DATABASE_URL")
 
-	dsn := fmt.Sprintf("%s:%s@tcp(%s:%s)/%s?charset=utf8mb4&parseTime=True&loc=Local",
-		user, pass, host, port, name)
-
-	var err error
-	DB, err = gorm.Open(mysql.Open(dsn), &gorm.Config{})
-	if err != nil {
-		log.Fatal("Gagal koneksi database: ", err)
+	if dsn == "" {
+		// Fallback untuk local dev jika env file belum diload atau kosong
+		dsn = "host=localhost user=postgres password=postgres dbname=sirodb port=5432 sslmode=disable TimeZone=Asia/Jakarta"
+		fmt.Println("⚠️  Warning: DATABASE_URL not set, using default local config")
 	}
 
-	// Tambahkan models.ActivityLog di sini
-	err = DB.AutoMigrate(&models.User{}, &models.UserToken{}, &models.WorkOrder{}, &models.ActivityLog{})
+	database, err := gorm.Open(postgres.Open(dsn), &gorm.Config{})
 	if err != nil {
-		log.Fatal("Gagal migrasi database: ", err)
+		panic("Failed to connect to database!")
 	}
 
-	log.Println("Database Connected Successfully via .env config!")
+	// Auto Migrate
+	err = database.AutoMigrate(
+		&models.User{},
+		&models.WorkOrder{},
+		&models.ActivityLog{},
+	)
+
+	if err != nil {
+		log.Fatal("Migration failed:", err)
+	}
+
+	DB = database
+	fmt.Println("✅ Connected to Neon DB (PostgreSQL)")
 }
