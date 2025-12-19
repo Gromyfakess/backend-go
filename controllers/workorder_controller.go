@@ -2,10 +2,10 @@ package controllers
 
 import (
 	"fmt"
-	"os"
-	"path/filepath"
+	"siro-backend/constants"
 	"siro-backend/models"
 	"siro-backend/repository"
+	"siro-backend/utils"
 	"strconv"
 	"time"
 
@@ -14,25 +14,28 @@ import (
 
 // Helper untuk mencatat Log Aktivitas ke Database
 func logActivity(userID uint, userName, action, details, status string, reqID uint) {
-	newLog := models.ActivityLog{
-		UserID:    userID,
-		UserName:  userName,
-		Action:    action,
-		Details:   details,
-		Status:    status,
-		RequestID: reqID,
-		Timestamp: time.Now(),
-	}
-	repository.CreateActivityLog(&newLog)
+	// PENTING: Jalankan di background (goroutine) agar client tidak menunggu insert log selesai
+	go func() {
+		newLog := models.ActivityLog{
+			UserID:    userID,
+			UserName:  userName,
+			Action:    action,
+			Details:   details,
+			Status:    status,
+			RequestID: reqID,
+			Timestamp: time.Now(),
+		}
+		// Abaikan error untuk log aktivitas agar tidak crash process utama
+		_ = repository.CreateActivityLog(&newLog)
+	}()
 }
 
-// GetActivities: Mengambil log aktivitas terbaru untuk Dashboard
 func GetActivities(c *gin.Context) {
-	logs := repository.GetRecentActivities()
+	// Default ambil 10 aktivitas terakhir
+	logs := repository.GetRecentActivities(5)
 	c.JSON(200, logs)
 }
 
-// CreateWorkOrder: Membuat request baru
 func CreateWorkOrder(c *gin.Context) {
 	var input models.WorkOrderRequest
 	if err := c.ShouldBindJSON(&input); err != nil {
@@ -44,8 +47,12 @@ func CreateWorkOrder(c *gin.Context) {
 	role, _ := c.Get("role")
 	canCRUD, _ := c.Get("canCRUD")
 
-	// Validasi Permission
-	if role != "Admin" && canCRUD == false {
+	canCRUDBool, ok := canCRUD.(bool)
+	if !ok {
+		canCRUDBool = false
+	}
+
+	if role != constants.RoleAdmin && !canCRUDBool {
 		c.JSON(403, gin.H{"error": "Permission denied"})
 		return
 	}
@@ -63,9 +70,9 @@ func CreateWorkOrder(c *gin.Context) {
 		Priority:      input.Priority,
 		RequesterID:   requester.ID,
 		RequesterName: requester.Name,
-		Unit:          input.Unit, // Menggunakan Unit Tujuan dari Frontend
+		Unit:          input.Unit,
 		PhotoURL:      input.PhotoURL,
-		Status:        "Pending",
+		Status:        constants.StatusPending,
 		CreatedAt:     time.Now(),
 		UpdatedAt:     time.Now(),
 	}
@@ -76,13 +83,12 @@ func CreateWorkOrder(c *gin.Context) {
 	}
 
 	logDesc := fmt.Sprintf("membuat request ke %s:", input.Unit)
-	logActivity(requester.ID, requester.Name, logDesc, newOrder.Title, "Pending", newOrder.ID)
+	logActivity(requester.ID, requester.Name, logDesc, newOrder.Title, constants.StatusPending, newOrder.ID)
 
-	fullOrder, _ := repository.GetWorkOrderById(strconv.Itoa(int(newOrder.ID)))
+	fullOrder, _ := repository.GetWorkOrderById(newOrder.ID)
 	c.JSON(201, fullOrder)
 }
 
-// UploadWorkOrderEvidence: Upload foto bukti untuk Request
 func UploadWorkOrderEvidence(c *gin.Context) {
 	file, err := c.FormFile("file")
 	if err != nil {
@@ -90,69 +96,78 @@ func UploadWorkOrderEvidence(c *gin.Context) {
 		return
 	}
 
-	uploadPath := "uploads/workorder"
-	if _, err := os.Stat(uploadPath); os.IsNotExist(err) {
-		os.MkdirAll(uploadPath, os.ModePerm)
-	}
+	uploadConfig := utils.DefaultImageConfig("workorder")
+	relativePath, err := utils.SaveUploadedFile(file, uploadConfig)
 
-	// Nama file unik
-	filename := fmt.Sprintf("%d_%s", time.Now().UnixNano(), filepath.Base(file.Filename))
-	dst := filepath.Join(uploadPath, filename)
-
-	if err := c.SaveUploadedFile(file, dst); err != nil {
-		c.JSON(500, gin.H{"error": "Failed to save file"})
+	if err != nil {
+		c.JSON(400, gin.H{"error": err.Error()})
 		return
 	}
 
-	fileURL := "/uploads/workorder/" + filename
+	fullURL := utils.GetBaseURL() + relativePath
 	c.JSON(200, gin.H{
 		"message": "File uploaded successfully",
-		"url":     fileURL,
+		"url":     fullURL,
 	})
 }
 
-// GetWorkOrders: Mengambil semua request
 func GetWorkOrders(c *gin.Context) {
 	orders := repository.GetAllWorkOrders()
 	c.JSON(200, orders)
 }
 
-// TakeRequest: Staff mengambil request sendiri
 func TakeRequest(c *gin.Context) {
-	id := c.Param("id")
+	idStr := c.Param("id")
+
+	id, err := strconv.Atoi(idStr)
+	if err != nil {
+		c.JSON(400, gin.H{"error": "Invalid ID format"})
+		return
+	}
+
 	uid, _ := c.Get("userID")
 	userID := uid.(uint)
 	user, _ := repository.GetUserByID(userID)
 
-	order, err := repository.GetWorkOrderById(id)
+	order, err := repository.GetWorkOrderById(uint(id))
 	if err != nil {
 		c.JSON(404, gin.H{"error": "Not found"})
 		return
 	}
 
-	now := time.Now() // Waktu mulai pengerjaan
+	if order.Status == constants.StatusCompleted {
+		c.JSON(400, gin.H{"error": "Tiket sudah selesai, tidak bisa diambil lagi."})
+		return
+	}
+
+	now := time.Now()
 
 	order.AssigneeID = &userID
-	order.Status = "In Progress"
-	order.TakenAt = &now // Simpan waktu TakenAt
+	order.Status = constants.StatusInProgress
+	order.TakenAt = &now
 
 	repository.UpdateWorkOrder(&order)
 
-	// LOG AKTIVITAS
-	logActivity(user.ID, user.Name, "sedang mengerjakan:", order.Title, "In Progress", order.ID)
+	logActivity(user.ID, user.Name, "sedang mengerjakan:", order.Title, constants.StatusInProgress, order.ID)
 
 	c.JSON(200, gin.H{"message": "Taken"})
 }
 
-// AssignStaff: Admin menugaskan request ke staff lain
 func AssignStaff(c *gin.Context) {
-	id := c.Param("id")
+	idStr := c.Param("id")
+
+	id, err := strconv.Atoi(idStr)
+	if err != nil {
+		c.JSON(400, gin.H{"error": "Invalid ID format"})
+		return
+	}
+
 	uid, _ := c.Get("userID")
 	admin, _ := repository.GetUserByID(uid.(uint))
 
 	var i models.AssignRequest
 	if err := c.ShouldBindJSON(&i); err != nil {
-		c.JSON(400, gin.H{"error": "Invalid"})
+		c.JSON(400, gin.H{"error": "Invalid input"})
 		return
 	}
 
@@ -162,67 +177,75 @@ func AssignStaff(c *gin.Context) {
 		return
 	}
 
-	order, err := repository.GetWorkOrderById(id)
+	order, err := repository.GetWorkOrderById(uint(id))
 	if err != nil {
 		c.JSON(404, gin.H{"error": "Work order not found"})
+		return
+	}
+
+	if order.Status == constants.StatusCompleted {
+		c.JSON(400, gin.H{"error": "Tiket sudah selesai."})
 		return
 	}
 
 	now := time.Now()
 
 	order.AssigneeID = &i.AssigneeID
-	order.Status = "In Progress"
+	order.Status = constants.StatusInProgress
 	order.TakenAt = &now
 
 	repository.UpdateWorkOrder(&order)
 
 	logMessage := fmt.Sprintf("menugaskan request kepada %s:", assignee.Name)
-	logActivity(admin.ID, admin.Name, logMessage, order.Title, "In Progress", order.ID)
+	logActivity(admin.ID, admin.Name, logMessage, order.Title, constants.StatusInProgress, order.ID)
 
 	c.JSON(200, gin.H{"message": "Assigned"})
 }
 
-// FinalizeOrder: Menyelesaikan tiket dengan catatan
-// FinalizeOrder: Menyelesaikan tiket dengan catatan
 func FinalizeOrder(c *gin.Context) {
-	id := c.Param("id")
+	idStr := c.Param("id")
+
+	id, err := strconv.Atoi(idStr)
+	if err != nil {
+		c.JSON(400, gin.H{"error": "Invalid ID format"})
+		return
+	}
+
 	uid, _ := c.Get("userID")
 	role, _ := c.Get("role")
 	user, _ := repository.GetUserByID(uid.(uint))
 
 	var input models.FinalizeRequest
 	if err := c.ShouldBindJSON(&input); err != nil {
-		// Note opsional
+		// Just continue if bind fails
 	}
 
-	order, err := repository.GetWorkOrderById(id)
+	order, err := repository.GetWorkOrderById(uint(id))
 	if err != nil {
 		c.JSON(404, gin.H{"error": "Not found"})
 		return
 	}
 
-	// 1. Cek apakah tiket sudah diambil?
 	if order.AssigneeID == nil {
 		c.JSON(400, gin.H{"error": "Tiket belum diambil (Take) oleh siapapun"})
 		return
 	}
 
-	// 2. Validasi: Hanya Assignee atau Admin yang boleh finalize
-	if *order.AssigneeID != user.ID && role != "Admin" {
-		c.JSON(403, gin.H{"error": "Anda tidak memiliki akses. Hanya staff yang mengerjakan tiket ini yang dapat menyelesaikannya."})
+	if *order.AssigneeID != user.ID && role != constants.RoleAdmin {
+		c.JSON(403, gin.H{"error": "Akses ditolak. Hanya staff penanggung jawab yang boleh menyelesaikan tiket."})
 		return
 	}
 
 	now := time.Now()
 
-	order.Status = "Completed"
+	order.Status = constants.StatusCompleted
 	order.CompletedAt = &now
 	order.CompletedByID = &user.ID
 	order.CompletionNote = input.Note
 
 	repository.UpdateWorkOrder(&order)
 
-	logActivity(user.ID, user.Name, "telah menyelesaikan tiket:", order.Title, "Completed", order.ID)
+	logActivity(user.ID, user.Name, "telah menyelesaikan tiket:", order.Title, constants.StatusCompleted, order.ID)
 
 	c.JSON(200, gin.H{"message": "Done"})
 }

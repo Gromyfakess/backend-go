@@ -9,7 +9,7 @@ func CreateWorkOrder(wo *models.WorkOrder) error {
 	return config.DB.Create(wo).Error
 }
 
-func GetWorkOrderById(id string) (models.WorkOrder, error) {
+func GetWorkOrderById(id uint) (models.WorkOrder, error) {
 	var wo models.WorkOrder
 	err := config.DB.Preload("Assignee").
 		Preload("RequesterData").

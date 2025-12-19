@@ -5,16 +5,20 @@ import (
 	"siro-backend/models"
 )
 
-func CreateActivityLog(log *models.ActivityLog) {
-	// Gunakan goroutine agar tidak memblokir response utama
-	go func() {
-		config.DB.Create(log)
-	}()
+// CreateActivityLog: Menyimpan log aktivitas.
+// Note: Dibuat synchronous agar error bisa ditangkap.
+func CreateActivityLog(log *models.ActivityLog) error {
+	return config.DB.Create(log).Error
 }
 
-func GetRecentActivities() []models.ActivityLog {
+// GetRecentActivities: Mengambil log aktivitas terbaru dengan limit tertentu
+func GetRecentActivities(limit int) []models.ActivityLog {
 	var logs []models.ActivityLog
-	// Ambil 5 aktivitas terakhir
-	config.DB.Order("timestamp desc").Limit(5).Find(&logs)
+
+	if limit <= 0 {
+		limit = 5
+	}
+
+	config.DB.Order("timestamp desc").Limit(limit).Find(&logs)
 	return logs
 }

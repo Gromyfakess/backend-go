@@ -1,10 +1,10 @@
 package middleware
 
 import (
-	"strings"
-
+	"siro-backend/constants"
 	"siro-backend/repository"
 	"siro-backend/utils"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 	"github.com/golang-jwt/jwt/v5"
@@ -20,7 +20,6 @@ func AuthMiddleware() gin.HandlerFunc {
 
 		tokenString := strings.Split(authHeader, "Bearer ")[1]
 
-		// 1. Verifikasi Signature JWT
 		token, err := jwt.Parse(tokenString, func(token *jwt.Token) (interface{}, error) {
 			return utils.JwtSecret, nil
 		})
@@ -38,7 +37,6 @@ func AuthMiddleware() gin.HandlerFunc {
 
 		userID := uint(claims["user_id"].(float64))
 
-		// Memastikan token ini adalah token yang paling baru di DB
 		isValidInDB := repository.CheckAccessTokenValid(userID, tokenString)
 		if !isValidInDB {
 			c.AbortWithStatusJSON(401, gin.H{"error": "Session revoked or expired"})
@@ -54,8 +52,10 @@ func AuthMiddleware() gin.HandlerFunc {
 
 func AdminOnly() gin.HandlerFunc {
 	return func(c *gin.Context) {
-		if role, _ := c.Get("role"); role != "Admin" {
-			c.AbortWithStatusJSON(403, gin.H{"error": "Admin only"})
+		role, exists := c.Get("role")
+		// Gunakan Constant untuk pengecekan Role
+		if !exists || role != constants.RoleAdmin {
+			c.AbortWithStatusJSON(403, gin.H{"error": "Admin only area"})
 			return
 		}
 		c.Next()

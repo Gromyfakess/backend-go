@@ -31,7 +31,7 @@ func UpdateUser(user *models.User) error {
 	return config.DB.Save(user).Error
 }
 
-func DeleteUser(id string) error {
+func DeleteUser(id uint) error {
 	return config.DB.Delete(&models.User{}, id).Error
 }
 
@@ -41,6 +41,6 @@ func GetStaffByUnit(unit string) []models.User {
 	return users
 }
 
-func UpdateAvailability(id string, status string) error {
+func UpdateAvailability(id uint, status string) error {
 	return config.DB.Model(&models.User{}).Where("id = ?", id).Update("availability", status).Error
 }
