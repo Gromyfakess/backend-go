@@ -1,12 +1,10 @@
 package main
 
 import (
-	"fmt"
 	"os"
 	"siro-backend/config"
 	"siro-backend/controllers"
 	"siro-backend/middleware"
-	"siro-backend/utils"
 
 	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
@@ -14,39 +12,21 @@ import (
 )
 
 func main() {
-	// Load .env diabaikan jika error (untuk production)
+	// 1. Load .env file (Hanya untuk local development)
+	// Di Leapcell, environment variable diset lewat dashboard, jadi error diabaikan
 	_ = godotenv.Load()
 
-	utils.InitJWT()
-
-	// Ini sekarang tidak akan memblokir startup lama-lama
-	config.ConnectDB()
+	// 2. Connect ke Database (Neon DB via PostgreSQL Driver)
+	config.ConnectDatabase()
 
 	r := gin.Default()
 
-	frontendURL := os.Getenv("FRONTEND_URL")
-	if frontendURL == "" {
-		frontendURL = "http://localhost:3000"
-	}
-
-	r.Use(cors.New(cors.Config{
-		AllowOrigins:     []string{frontendURL},
-		AllowMethods:     []string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"},
-		AllowHeaders:     []string{"Authorization", "Content-Type"},
-		AllowCredentials: true,
-	}))
-
-	// Static files (Untuk production disarankan pakai Cloudinary, tapi ini ok untuk fallback)
-	r.Static("/uploads", "./uploads")
-
-	// --- PENTING: Health Check Route ---
-	// Route ini ringan, hanya untuk memberi tahu Leapcell bahwa app sudah hidup
-	r.GET("/", func(c *gin.Context) {
-		c.JSON(200, gin.H{
-			"status":  "alive",
-			"message": "Siro Backend is Running",
-		})
-	})
+	// 3. Setup CORS (Penting agar Next.js bisa akses)
+	// Sesuaikan AllowOrigins dengan URL frontend Next.js Anda nanti
+	config := cors.DefaultConfig()
+	config.AllowAllOrigins = true
+	config.AllowHeaders = []string{"Origin", "Content-Length", "Content-Type", "Authorization"}
+	r.Use(cors.New(config))
 
 	// Public Routes
 	r.POST("/login", controllers.LoginHandler)
@@ -89,8 +69,5 @@ func main() {
 	if port == "" {
 		port = "8080"
 	}
-	fmt.Printf("Server running on port :%s\n", port)
-
-	// Pastikan listen di 0.0.0.0 (Gin defaultnya sudah ini jika pakai ":port")
-	r.Run(":" + port)
+	r.Run("0.0.0.0:" + port)
 }
