@@ -5,8 +5,7 @@ import (
 	"siro-backend/models"
 )
 
-// CreateActivityLog: Menyimpan log aktivitas.
-// Note: Dibuat synchronous agar error bisa ditangkap.
+// CreateActivityLog: Menyimpan log aktivitas
 func CreateActivityLog(log *models.ActivityLog) error {
 	return config.DB.Create(log).Error
 }

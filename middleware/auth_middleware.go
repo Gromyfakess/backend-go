@@ -53,7 +53,6 @@ func AuthMiddleware() gin.HandlerFunc {
 func AdminOnly() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		role, exists := c.Get("role")
-		// Gunakan Constant untuk pengecekan Role
 		if !exists || role != constants.RoleAdmin {
 			c.AbortWithStatusJSON(403, gin.H{"error": "Admin only area"})
 			return

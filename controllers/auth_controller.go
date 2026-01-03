@@ -86,12 +86,12 @@ func RefreshHandler(c *gin.Context) {
 		return
 	}
 
-	// --- Intelligent Refresh Logic ---
+	// --- Intelligent Refresh ---
 	timeRemaining := time.Until(rtExpiresAt)
-	rotationThreshold := time.Hour * 12
+	rotationThreshold := time.Hour * 12 // Kalau sisa waktu < 12 jam, rotasi token
 
 	if timeRemaining < rotationThreshold {
-		// Rotate: Access + Refresh
+		// Rotasi Access Token + Refresh Token
 		newAcc, newRef, newAtExp, newRtExp, _ := utils.GenerateAllTokens(user.ID, user.Role, user.CanCRUD)
 		repository.SaveAllTokens(user.ID, newAcc, newRef, newAtExp, newRtExp)
 		isProduction := os.Getenv("APP_ENV") == "production"

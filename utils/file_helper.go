@@ -70,7 +70,7 @@ func SaveUploadedFile(file *multipart.FileHeader, config UploadConfig) (string, 
 		os.MkdirAll(uploadDir, 0755)
 	}
 
-	// 5. Generate Nama File Unik (Timestamp + Random/Clean Filename)
+	// 5. Generate Nama File Unik
 	filename := fmt.Sprintf("%d_%s%s", time.Now().UnixNano(), config.Folder, ext)
 	dstPath := filepath.Join(uploadDir, filename)
 
@@ -85,8 +85,6 @@ func SaveUploadedFile(file *multipart.FileHeader, config UploadConfig) (string, 
 		return "", err
 	}
 
-	// 7. Kembalikan URL Relative (Agar frontend yang handle base URL atau Backend handle di response)
-	// Menggunakan forward slash agar konsisten di URL
 	return fmt.Sprintf("/uploads/%s/%s", config.Folder, filename), nil
 }
 

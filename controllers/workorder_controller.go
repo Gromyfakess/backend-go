@@ -14,7 +14,7 @@ import (
 
 // Helper untuk mencatat Log Aktivitas ke Database
 func logActivity(userID uint, userName, action, details, status string, reqID uint) {
-	// PENTING: Jalankan di background (goroutine) agar client tidak menunggu insert log selesai
+	// Jalankan di background (goroutine) agar client tidak menunggu insert log selesai
 	go func() {
 		newLog := models.ActivityLog{
 			UserID:    userID,
@@ -31,7 +31,7 @@ func logActivity(userID uint, userName, action, details, status string, reqID ui
 }
 
 func GetActivities(c *gin.Context) {
-	// Default ambil 10 aktivitas terakhir
+	// Ambil 5 aktivitas terakhir
 	logs := repository.GetRecentActivities(5)
 	c.JSON(200, logs)
 }
@@ -217,7 +217,7 @@ func FinalizeOrder(c *gin.Context) {
 
 	var input models.FinalizeRequest
 	if err := c.ShouldBindJSON(&input); err != nil {
-		// Just continue if bind fails
+		// Lanjut aja kalau bind gagal, note bisa kosong
 	}
 
 	order, err := repository.GetWorkOrderById(uint(id))
@@ -227,7 +227,7 @@ func FinalizeOrder(c *gin.Context) {
 	}
 
 	if order.AssigneeID == nil {
-		c.JSON(400, gin.H{"error": "Tiket belum diambil (Take) oleh siapapun"})
+		c.JSON(400, gin.H{"error": "Tiket belum diambil oleh siapapun"})
 		return
 	}
 

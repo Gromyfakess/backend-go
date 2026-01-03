@@ -23,10 +23,6 @@ func deleteOldAvatar(avatarURL string) {
 		return
 	}
 
-	if strings.Contains(avatarURL, "default-avatar") {
-		return
-	}
-
 	parts := strings.Split(avatarURL, "/")
 	fileName := parts[len(parts)-1]
 

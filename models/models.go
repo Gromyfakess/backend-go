@@ -26,14 +26,14 @@ type UserToken struct {
 	RTExpiresAt  time.Time
 }
 
-// WorkOrder (Updated)
+// WorkOrder
 type WorkOrder struct {
 	ID          uint   `json:"id" gorm:"primaryKey"`
 	Title       string `json:"title"`
 	Description string `json:"description"`
 	Priority    string `json:"priority"` // High, Medium, Low
 	Status      string `json:"status"`   // Pending, In Progress, Completed
-	Unit        string `json:"unit"`     // Unit asal pelapor
+	Unit        string `json:"unit"`     // Unit asal yg request
 	PhotoURL    string `json:"photo"`    // Bukti Foto
 
 	RequesterID   uint   `json:"requesterId"`
@@ -43,9 +43,9 @@ type WorkOrder struct {
 	AssigneeID *uint `json:"assigneeId"`
 	Assignee   User  `json:"assignee" gorm:"foreignKey:AssigneeID"`
 
-	// === FIELD BARU UNTUK TRACKING ===
-	TakenAt       *time.Time `json:"taken_at"`      // Waktu saat status berubah jadi In Progress
-	CompletedAt   *time.Time `json:"completed_at"`  // Waktu saat status berubah jadi Completed
+	// === TRACKING ===
+	TakenAt       *time.Time `json:"taken_at"`
+	CompletedAt   *time.Time `json:"completed_at"`
 	CompletedByID *uint      `json:"completedById"` // ID staff yang menyelesaikan
 	CompletedBy   User       `json:"completedBy" gorm:"foreignKey:CompletedByID"`
 
@@ -56,7 +56,7 @@ type WorkOrder struct {
 	UpdatedAt time.Time `json:"updated_at"`
 }
 
-// ActivityLog (Tabel Baru)
+// ActivityLog
 type ActivityLog struct {
 	ID        uint      `json:"id" gorm:"primaryKey"`
 	UserID    uint      `json:"userId"`
@@ -80,7 +80,7 @@ type WorkOrderRequest struct {
 	Description string `json:"description"`
 	Priority    string `json:"priority" binding:"required"`
 	Unit        string `json:"unit"`
-	PhotoURL    string `json:"photo"` // Input baru
+	PhotoURL    string `json:"photo"`
 }
 
 type UserRequest struct {

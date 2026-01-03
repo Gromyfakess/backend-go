@@ -27,7 +27,7 @@ func main() {
 	// 3. Setup Router
 	r := gin.Default()
 
-	// --- CORS CONFIGURATION ---
+	// --- CORS CONFIG ---
 	frontendURL := os.Getenv("FRONTEND_URL")
 	if frontendURL == "" {
 		frontendURL = "http://localhost:3000"
