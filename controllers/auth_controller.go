@@ -88,7 +88,7 @@ func RefreshHandler(c *gin.Context) {
 
 	// --- Intelligent Refresh ---
 	timeRemaining := time.Until(rtExpiresAt)
-	rotationThreshold := time.Hour * 12 // Kalau sisa waktu < 12 jam, rotasi token
+	rotationThreshold := time.Hour * 1 // Kalo sisa waktu < 1 jam, rotasi token
 
 	if timeRemaining < rotationThreshold {
 		// Rotasi Access Token + Refresh Token
