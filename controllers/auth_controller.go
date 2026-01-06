@@ -38,7 +38,7 @@ func LoginHandler(c *gin.Context) {
 
 	repository.SaveAllTokens(user.ID, acc, ref, atExp, rtExp)
 
-	// PENTING: Set Cookie (untuk keamanan browser) DAN kirim JSON (untuk NextAuth)
+	// Set Cookie
 	isProduction := os.Getenv("APP_ENV") == "production"
 	c.SetCookie("refresh_token", ref, 3600*24*7, "/", "", isProduction, true)
 

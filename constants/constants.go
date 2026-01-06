@@ -5,7 +5,7 @@ const (
 	RoleAdmin = "Admin"
 	RoleStaff = "Staff"
 
-	// Status WorkOrder
+	// Status Request
 	StatusPending    = "Pending"
 	StatusInProgress = "In Progress"
 	StatusCompleted  = "Completed"

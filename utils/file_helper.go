@@ -33,18 +33,18 @@ func DefaultImageConfig(folder string) UploadConfig {
 
 // SaveUploadedFile menangani validasi, sanitasi, dan penyimpanan file
 func SaveUploadedFile(file *multipart.FileHeader, config UploadConfig) (string, error) {
-	// 1. Validasi Ukuran
+	// Validasi Ukuran
 	if file.Size > config.MaxBytes {
 		return "", errors.New("file too large (max 2MB)")
 	}
 
-	// 2. Validasi Ekstensi
+	// Validasi Ekstensi
 	ext := strings.ToLower(filepath.Ext(file.Filename))
 	if !config.AllowedExts[ext] {
 		return "", errors.New("invalid file extension")
 	}
 
-	// 3. Validasi Magic Bytes (Isi file sebenarnya)
+	// Validasi Magic Bytes
 	src, err := file.Open()
 	if err != nil {
 		return "", err
@@ -64,17 +64,17 @@ func SaveUploadedFile(file *multipart.FileHeader, config UploadConfig) (string, 
 		return "", errors.New("invalid file content (mime type mismatch)")
 	}
 
-	// 4. Persiapan Folder
+	// Persiapan Folder
 	uploadDir := filepath.Join("uploads", config.Folder)
 	if _, err := os.Stat(uploadDir); os.IsNotExist(err) {
 		os.MkdirAll(uploadDir, 0755)
 	}
 
-	// 5. Generate Nama File Unik
+	// Generate Nama File Unik
 	filename := fmt.Sprintf("%d_%s%s", time.Now().UnixNano(), config.Folder, ext)
 	dstPath := filepath.Join(uploadDir, filename)
 
-	// 6. Simpan File (Copy stream)
+	// Simpan File
 	out, err := os.Create(dstPath)
 	if err != nil {
 		return "", err

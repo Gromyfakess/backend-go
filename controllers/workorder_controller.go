@@ -26,7 +26,9 @@ func logActivity(userID uint, userName, action, details, status string, reqID ui
 			Timestamp: time.Now(),
 		}
 		// Abaikan error untuk log aktivitas agar tidak crash process utama
-		_ = repository.CreateActivityLog(&newLog)
+		if err := repository.CreateActivityLog(&newLog); err != nil {
+			fmt.Printf("[LOG ERROR] Failed to save activity: %v\n", err)
+		}
 	}()
 }
 
@@ -43,7 +45,12 @@ func CreateWorkOrder(c *gin.Context) {
 		return
 	}
 
-	uid, _ := c.Get("userID")
+	uid, exists := c.Get("userID")
+	if !exists {
+		c.JSON(401, gin.H{"error": "Unauthorized context"})
+		return
+	}
+
 	role, _ := c.Get("role")
 	canCRUD, _ := c.Get("canCRUD")
 
@@ -57,7 +64,11 @@ func CreateWorkOrder(c *gin.Context) {
 		return
 	}
 
-	requester, _ := repository.GetUserByID(uid.(uint))
+	requester, err := repository.GetUserByID(uid.(uint))
+	if err != nil {
+		c.JSON(400, gin.H{"error": "User pembuat request tidak valid"})
+		return
+	}
 
 	if input.Unit == "" {
 		c.JSON(400, gin.H{"error": "Unit tujuan harus dipilih"})
@@ -112,7 +123,20 @@ func UploadWorkOrderEvidence(c *gin.Context) {
 }
 
 func GetWorkOrders(c *gin.Context) {
-	orders := repository.GetAllWorkOrders()
+	status := c.Query("status")
+	unit := c.Query("unit")
+	requesterUnit := c.Query("requester_unit") // Untuk tab Outgoing
+	date := c.Query("date")
+
+	filters := map[string]string{
+		"status":         status,
+		"unit":           unit,
+		"requester_unit": requesterUnit,
+		"date":           date,
+	}
+
+	orders := repository.GetWorkOrders(filters)
+
 	c.JSON(200, orders)
 }
 

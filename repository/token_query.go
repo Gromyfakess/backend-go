@@ -43,14 +43,13 @@ func CheckRefreshTokenValid(userID uint, refreshString string) (bool, time.Time)
 		return false, time.Time{}
 	}
 
-	// Validasi string token dan waktu kadaluwarsa
 	isTokenMatch := tokenData.RefreshToken == refreshString
 	isNotExpired := time.Now().Before(tokenData.RTExpiresAt)
 
 	return (isTokenMatch && isNotExpired), tokenData.RTExpiresAt
 }
 
-// CheckAccessTokenValid: Validasi sederhana untuk middleware (Logout / Revocation check)
+// CheckAccessTokenValid: Validasi sederhana untuk middleware
 func CheckAccessTokenValid(userID uint, tokenString string) bool {
 	var tokenData models.UserToken
 
