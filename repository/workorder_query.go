@@ -1,74 +1,160 @@
 package repository
 
 import (
+	"database/sql"
+	"fmt"
 	"siro-backend/config"
 	"siro-backend/constants"
 	"siro-backend/models"
-	"time"
+	"strings"
 )
 
+// Query Constant dengan JOIN dan COALESCE
+const selectWOQuery = `
+    SELECT 
+        w.id, w.title, w.description, w.priority, w.status, w.unit, w.photo_url, 
+        w.requester_id, w.assignee_id, w.taken_at, 
+        w.completed_at, w.completed_by_id, COALESCE(w.completion_note, ''), w.created_at, w.updated_at,
+        req.name, req.unit, COALESCE(req.avatar_url, ''),     	 				  -- Requester Info
+        COALESCE(asg.name, ''), COALESCE(asg.email, ''), COALESCE(asg.unit, ''),  -- Assignee Info
+        COALESCE(cmp.name, '')                                  				  -- CompletedBy Info
+    FROM work_orders w
+    LEFT JOIN users req ON w.requester_id = req.id
+    LEFT JOIN users asg ON w.assignee_id = asg.id
+    LEFT JOIN users cmp ON w.completed_by_id = cmp.id
+`
+
+// Helper Scan
+func scanWO(rows *sql.Rows) (models.WorkOrder, error) {
+	var w models.WorkOrder
+	var asgID, cmpID sql.NullInt64
+	var takenAt, completedAt sql.NullTime
+
+	err := rows.Scan(
+		&w.ID, &w.Title, &w.Description, &w.Priority, &w.Status, &w.Unit, &w.PhotoURL,
+		&w.RequesterID, &asgID, &takenAt, &completedAt, &cmpID, &w.CompletionNote, &w.CreatedAt, &w.UpdatedAt,
+		&w.RequesterData.Name, &w.RequesterData.Unit, &w.RequesterData.AvatarURL,
+		&w.Assignee.Name, &w.Assignee.Email, &w.Assignee.Unit,
+		&w.CompletedBy.Name,
+	)
+	if err != nil {
+		return w, err
+	}
+
+	if asgID.Valid {
+		uid := uint(asgID.Int64)
+		w.AssigneeID = &uid
+		w.Assignee.ID = uid
+	}
+	if cmpID.Valid {
+		uid := uint(cmpID.Int64)
+		w.CompletedByID = &uid
+		w.CompletedBy.ID = uid
+	}
+	if takenAt.Valid {
+		w.TakenAt = &takenAt.Time
+	}
+	if completedAt.Valid {
+		w.CompletedAt = &completedAt.Time
+	}
+
+	return w, nil
+}
+
+// --- CRUD ---
+
 func CreateWorkOrder(wo *models.WorkOrder) error {
-	return config.DB.Create(wo).Error
+	query := `INSERT INTO work_orders (title, description, priority, status, unit, photo_url, requester_id, created_at, updated_at) 
+			  VALUES (?, ?, ?, ?, ?, ?, ?, NOW(), NOW())`
+	res, err := config.DB.Exec(query, wo.Title, wo.Description, wo.Priority, constants.StatusPending, wo.Unit, wo.PhotoURL, wo.RequesterID)
+	if err != nil {
+		return err
+	}
+	id, _ := res.LastInsertId()
+	wo.ID = uint(id)
+	return nil
 }
 
 func GetWorkOrderById(id uint) (models.WorkOrder, error) {
-	var wo models.WorkOrder
-	err := config.DB.Preload("Assignee").
-		Preload("RequesterData").
-		Preload("CompletedBy").
-		First(&wo, id).Error
-	return wo, err
+	rows, err := config.DB.Query(selectWOQuery+" WHERE w.id = ?", id)
+	if err != nil {
+		return models.WorkOrder{}, err
+	}
+	defer rows.Close()
+	if rows.Next() {
+		return scanWO(rows)
+	}
+	return models.WorkOrder{}, fmt.Errorf("not found")
 }
 
-func GetWorkOrders(filters map[string]string) []models.WorkOrder {
-	var wos []models.WorkOrder
+func GetWorkOrders(filters map[string]string) ([]models.WorkOrder, error) {
+	query := selectWOQuery
+	var conditions []string
+	var args []interface{}
 
-	query := config.DB.Model(&models.WorkOrder{}).
-		Preload("Assignee").
-		Preload("RequesterData").
-		Preload("CompletedBy")
-
-	// Filter Status
-	if status, ok := filters["status"]; ok && status != "" {
-		if status == "active" {
-			query = query.Where("work_orders.status IN ?", []string{constants.StatusPending, constants.StatusInProgress})
+	if s := filters["status"]; s != "" {
+		if s == "active" {
+			conditions = append(conditions, "w.status IN (?, ?)")
+			args = append(args, constants.StatusPending, constants.StatusInProgress)
 		} else {
-			query = query.Where("work_orders.status = ?", status)
+			conditions = append(conditions, "w.status = ?")
+			args = append(args, s)
 		}
 	}
-
-	// Filter Unit Tujuan (Incoming Requests)
-	if unit, ok := filters["unit"]; ok && unit != "" {
-		query = query.Where("work_orders.unit = ?", unit)
+	if u := filters["unit"]; u != "" {
+		conditions = append(conditions, "w.unit = ?")
+		args = append(args, u)
+	}
+	if ru := filters["requester_unit"]; ru != "" {
+		conditions = append(conditions, "req.unit = ?")
+		args = append(args, ru)
+	}
+	if filters["date"] == "today" {
+		conditions = append(conditions, "DATE(w.created_at) = CURDATE()")
 	}
 
-	// Filter Unit Pembuat (Outgoing Requests)
-	if reqUnit, ok := filters["requester_unit"]; ok && reqUnit != "" {
-		query = query.Joins("JOIN users ON users.id = work_orders.requester_id").
-			Where("users.unit = ?", reqUnit)
+	if len(conditions) > 0 {
+		query += " WHERE " + strings.Join(conditions, " AND ")
 	}
+	query += " ORDER BY w.created_at DESC LIMIT 50"
 
-	// Filter Waktu (Today)
-	if date, ok := filters["date"]; ok && date == "today" {
-		now := time.Now()
-		// Set waktu start ke 00:00:00 hari ini
-		startOfDay := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
-		// Set waktu end ke 00:00:00 besok
-		endOfDay := startOfDay.Add(24 * time.Hour)
-
-		query = query.Where("work_orders.created_at >= ? AND work_orders.created_at < ?", startOfDay, endOfDay)
+	rows, err := config.DB.Query(query, args...)
+	if err != nil {
+		return nil, err
 	}
+	defer rows.Close()
 
-	query.Order("work_orders.created_at desc").Limit(20).Find(&wos)
-	return wos
+	var wos []models.WorkOrder
+	for rows.Next() {
+		if wo, err := scanWO(rows); err == nil {
+			wos = append(wos, wo)
+		}
+	}
+	return wos, nil
 }
 
-func UpdateWorkOrder(wo *models.WorkOrder) error {
-	return config.DB.Save(wo).Error
+// --- ACTIONS ---
+
+func TakeWorkOrder(woID, userID uint) error {
+	res, err := config.DB.Exec("UPDATE work_orders SET status=?, assignee_id=?, taken_at=NOW(), updated_at=NOW() WHERE id=? AND assignee_id IS NULL",
+		constants.StatusInProgress, userID, woID)
+	if err != nil {
+		return err
+	}
+	if aff, _ := res.RowsAffected(); aff == 0 {
+		return fmt.Errorf("tiket sudah diambil")
+	}
+	return nil
 }
 
-// -- ini jika ingin buat fungsi update dan delete (sekarang blm perlu) --
+func AssignWorkOrder(woID, userID uint) error {
+	_, err := config.DB.Exec("UPDATE work_orders SET status=?, assignee_id=?, updated_at=NOW() WHERE id=?",
+		constants.StatusInProgress, userID, woID)
+	return err
+}
 
-// func DeleteWorkOrder(wo *models.WorkOrder) error {
-// 	return config.DB.Delete(wo).Error
-// }
+func FinalizeWorkOrder(woID uint, note string, userID uint) error {
+	_, err := config.DB.Exec("UPDATE work_orders SET status=?, completion_note=?, completed_at=NOW(), completed_by_id=?, updated_at=NOW() WHERE id=?",
+		constants.StatusCompleted, note, userID, woID)
+	return err
+}

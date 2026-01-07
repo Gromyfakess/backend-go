@@ -2,9 +2,10 @@ package controllers
 
 import (
 	"fmt"
+	"net/http"
 	"os"
 	"path/filepath"
-	"siro-backend/constants"
+	"siro-backend/constants" // Import constants
 	"siro-backend/models"
 	"siro-backend/repository"
 	"siro-backend/utils"
@@ -14,51 +15,52 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// --- HELPER FUNCTION ---
-
-// deleteOldAvatar: Menghapus file foto lama dari server
 func deleteOldAvatar(avatarURL string) {
-	targetDir := fmt.Sprintf("/uploads/%s/", "avatar")
+	// FIX: Gunakan constants
+	targetDir := fmt.Sprintf("/%s/%s/", constants.DirUploads, constants.DirAvatar)
+
 	if !strings.Contains(avatarURL, targetDir) {
 		return
 	}
-
 	parts := strings.Split(avatarURL, "/")
 	fileName := parts[len(parts)-1]
+	if fileName == "" || fileName == "." || fileName == ".." {
+		return
+	}
 
-	filePath := filepath.Join("uploads", "avatar", fileName)
+	// FIX: Gunakan constants untuk path OS
+	filePath := filepath.Join(constants.DirUploads, constants.DirAvatar, fileName)
 	_ = os.Remove(filePath)
 }
-
-// --- HANDLERS ---
 
 func GetMe(c *gin.Context) {
 	uid, exists := c.Get("userID")
 	if !exists {
-		c.JSON(401, gin.H{"error": "Unauthorized"})
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Unauthorized"})
 		return
 	}
 
 	user, err := repository.GetUserByID(uid.(uint))
 	if err != nil {
-		c.JSON(404, gin.H{"error": "User not found"})
+		c.JSON(http.StatusNotFound, gin.H{"error": "User not found"})
 		return
 	}
-	c.JSON(200, user)
+	c.JSON(http.StatusOK, user)
 }
 
 func UpdateMe(c *gin.Context) {
 	uid, _ := c.Get("userID")
+	userID := uid.(uint)
 
-	user, err := repository.GetUserByID(uid.(uint))
+	user, err := repository.GetUserByID(userID)
 	if err != nil {
-		c.JSON(404, gin.H{"error": "User not found"})
+		c.JSON(http.StatusNotFound, gin.H{"error": "User not found"})
 		return
 	}
 
 	var i models.UserRequest
 	if err := c.ShouldBindJSON(&i); err != nil {
-		c.JSON(400, gin.H{"error": err.Error()})
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 
@@ -77,49 +79,54 @@ func UpdateMe(c *gin.Context) {
 		user.PasswordHash = p
 	}
 
-	if err := repository.UpdateUser(&user); err != nil {
-		c.JSON(500, gin.H{"error": "Failed to update profile"})
+	if err := repository.UpdateUser(user.ID, *user); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update profile"})
 		return
 	}
 
-	c.JSON(200, user)
+	c.JSON(http.StatusOK, user)
 }
 
 func UploadFile(c *gin.Context) {
 	file, err := c.FormFile("file")
 	if err != nil {
-		c.JSON(400, gin.H{"error": "File required (max 2MB)"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "File required (max 2MB)"})
 		return
 	}
 
-	uploadConfig := utils.DefaultImageConfig("avatar")
+	// FIX: Gunakan constants
+	uploadConfig := utils.DefaultImageConfig(constants.DirAvatar)
+
 	relativePath, err := utils.SaveUploadedFile(file, uploadConfig)
 	if err != nil {
-		c.JSON(400, gin.H{"error": err.Error()})
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 
 	fullURL := utils.GetBaseURL() + relativePath
-	c.JSON(200, gin.H{"url": fullURL})
+	c.JSON(http.StatusOK, gin.H{"url": fullURL})
 }
 
 func GetStaffList(c *gin.Context) {
-	users := repository.GetStaffByUnit(constants.DefaultUnit)
-	c.JSON(200, users)
+	staff, err := repository.GetUsersByUnit(constants.DefaultUnit)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch staff"})
+		return
+	}
+	c.JSON(http.StatusOK, staff)
 }
 
 func UpdateAvailability(c *gin.Context) {
 	idStr := c.Param("id")
-
 	id, err := strconv.Atoi(idStr)
 	if err != nil {
-		c.JSON(400, gin.H{"error": "Invalid ID format"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid ID format"})
 		return
 	}
 
 	var i models.AvailabilityRequest
 	if err := c.ShouldBindJSON(&i); err != nil {
-		c.JSON(400, gin.H{"error": "Invalid input"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid input"})
 		return
 	}
 
@@ -130,33 +137,39 @@ func UpdateAvailability(c *gin.Context) {
 		constants.AvailOffline: true,
 	}
 	if !validStatuses[i.Status] {
-		c.JSON(400, gin.H{"error": "Invalid status"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid status"})
 		return
 	}
 
 	if err := repository.UpdateAvailability(uint(id), i.Status); err != nil {
-		c.JSON(500, gin.H{"error": "Failed update availability"})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed update availability"})
 		return
 	}
-	c.JSON(200, gin.H{"status": "ok"})
+	c.JSON(http.StatusOK, gin.H{"status": "ok"})
 }
 
 // --- ADMIN HANDLERS ---
 
 func GetAllUsers(c *gin.Context) {
-	users := repository.GetAllUsers()
-	c.JSON(200, users)
+	users, err := repository.GetAllUsers()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch users"})
+		return
+	}
+	c.JSON(http.StatusOK, users)
 }
 
 func CreateUser(c *gin.Context) {
 	var i models.UserRequest
 	if err := c.ShouldBindJSON(&i); err != nil {
-		c.JSON(400, gin.H{"error": err.Error()})
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 
 	p, _ := utils.HashPassword(i.Password)
-	defaultAvatar := fmt.Sprintf("%s/uploads/default-avatar.jpg", utils.GetBaseURL())
+
+	// FIX: Gunakan constants untuk default avatar path
+	defaultAvatar := fmt.Sprintf("%s/%s/default-avatar.jpg", utils.GetBaseURL(), constants.DirUploads)
 
 	if i.AvatarURL != "" {
 		defaultAvatar = i.AvatarURL
@@ -175,30 +188,29 @@ func CreateUser(c *gin.Context) {
 	}
 
 	if err := repository.CreateUser(&u); err != nil {
-		c.JSON(500, gin.H{"error": "Failed to create user"})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create user"})
 		return
 	}
-	c.JSON(201, u)
+	c.JSON(http.StatusCreated, u)
 }
 
 func UpdateUser(c *gin.Context) {
 	idStr := c.Param("id")
-
 	id, err := strconv.Atoi(idStr)
 	if err != nil {
-		c.JSON(400, gin.H{"error": "Invalid ID format"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid ID format"})
 		return
 	}
 
 	var i models.UserRequest
 	if err := c.ShouldBindJSON(&i); err != nil {
-		c.JSON(400, gin.H{"error": err.Error()})
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 
 	user, err := repository.GetUserByID(uint(id))
 	if err != nil {
-		c.JSON(404, gin.H{"error": "User not found"})
+		c.JSON(http.StatusNotFound, gin.H{"error": "User not found"})
 		return
 	}
 
@@ -215,36 +227,34 @@ func UpdateUser(c *gin.Context) {
 		}
 		user.AvatarURL = i.AvatarURL
 	}
-
 	if i.Password != "" {
 		p, _ := utils.HashPassword(i.Password)
 		user.PasswordHash = p
 	}
 
-	if err := repository.UpdateUser(&user); err != nil {
-		c.JSON(500, gin.H{"error": "Failed to update user"})
+	if err := repository.UpdateUser(user.ID, *user); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update user"})
 		return
 	}
-	c.JSON(200, user)
+	c.JSON(http.StatusOK, user)
 }
 
 func DeleteUser(c *gin.Context) {
 	idStr := c.Param("id")
-
 	id, err := strconv.Atoi(idStr)
 	if err != nil {
-		c.JSON(400, gin.H{"error": "Invalid ID format"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid ID format"})
 		return
 	}
 
 	user, err := repository.GetUserByID(uint(id))
-	if err == nil {
+	if err == nil && user.AvatarURL != "" {
 		deleteOldAvatar(user.AvatarURL)
 	}
 
 	if err := repository.DeleteUser(uint(id)); err != nil {
-		c.JSON(500, gin.H{"error": "Failed to delete user"})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to delete user"})
 		return
 	}
-	c.JSON(200, gin.H{"message": "Deleted"})
+	c.JSON(http.StatusOK, gin.H{"message": "Deleted"})
 }

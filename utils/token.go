@@ -14,7 +14,7 @@ var JwtSecret []byte
 func InitJWT() {
 	secret := os.Getenv("JWT_SECRET")
 	if secret == "" {
-		log.Fatal("JWT_SECRET is not set in .env file")
+		log.Fatal("FATAL: JWT_SECRET is not set in .env file. Application exiting.")
 	}
 	JwtSecret = []byte(secret)
 }

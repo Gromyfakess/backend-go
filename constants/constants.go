@@ -21,7 +21,11 @@ const (
 	AvailAway    = "Away"
 	AvailOffline = "Offline"
 
+	// Directories
+	DirUploads   = "uploads"
+	DirAvatar    = "avatar"
+	DirWorkOrder = "workorder"
+
 	// Default Config
 	DefaultUnit = "IT Center"
-	MaxFileSize = 2 << 20 // 2MB
 )

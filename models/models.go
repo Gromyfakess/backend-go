@@ -4,9 +4,9 @@ import "time"
 
 // User
 type User struct {
-	ID           uint      `json:"id" gorm:"primaryKey"`
+	ID           uint      `json:"id"`
 	Name         string    `json:"name"`
-	Email        string    `json:"email" gorm:"unique;size:100"`
+	Email        string    `json:"email"`
 	Role         string    `json:"role"`
 	Unit         string    `json:"unit"`
 	Phone        string    `json:"phone"`
@@ -19,38 +19,37 @@ type User struct {
 
 // UserToken
 type UserToken struct {
-	UserID       uint   `gorm:"primaryKey"`
-	AccessToken  string `gorm:"type:text"`
-	RefreshToken string `gorm:"type:text"`
+	UserID       uint
+	AccessToken  string
+	RefreshToken string
 	ATExpiresAt  time.Time
 	RTExpiresAt  time.Time
 }
 
 // WorkOrder
 type WorkOrder struct {
-	ID          uint   `json:"id" gorm:"primaryKey"`
+	ID          uint   `json:"id"`
 	Title       string `json:"title"`
 	Description string `json:"description"`
-	Priority    string `json:"priority"` // High, Medium, Low
-	Status      string `json:"status"`   // Pending, In Progress, Completed
-	Unit        string `json:"unit"`     // Unit asal yg request
-	PhotoURL    string `json:"photo"`    // Bukti Foto
+	Priority    string `json:"priority"`
+	Status      string `json:"status"`
+	Unit        string `json:"unit"`
+	PhotoURL    string `json:"photo"`
 
 	RequesterID   uint   `json:"requesterId"`
 	RequesterName string `json:"requester"`
-	RequesterData User   `json:"requesterData" gorm:"foreignKey:RequesterID"`
+	RequesterData User   `json:"requesterData"` // Akan diisi manual via JOIN
 
 	AssigneeID *uint `json:"assigneeId"`
-	Assignee   User  `json:"assignee" gorm:"foreignKey:AssigneeID"`
+	Assignee   User  `json:"assignee"` // Akan diisi manual via JOIN
 
 	// === TRACKING ===
 	TakenAt       *time.Time `json:"taken_at"`
 	CompletedAt   *time.Time `json:"completed_at"`
-	CompletedByID *uint      `json:"completedById"` // ID staff yang menyelesaikan
-	CompletedBy   User       `json:"completedBy" gorm:"foreignKey:CompletedByID"`
+	CompletedByID *uint      `json:"completedById"`
+	CompletedBy   User       `json:"completedBy"` // Akan diisi manual via JOIN
 
-	CompletionNote string `json:"completion_note"` // Catatan dari staff saat finalize
-	// ================================
+	CompletionNote string `json:"completion_note"`
 
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
@@ -58,7 +57,7 @@ type WorkOrder struct {
 
 // ActivityLog
 type ActivityLog struct {
-	ID        uint      `json:"id" gorm:"primaryKey"`
+	ID        uint      `json:"id"`
 	UserID    uint      `json:"userId"`
 	UserName  string    `json:"userName"`
 	Action    string    `json:"action"`

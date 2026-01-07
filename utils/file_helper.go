@@ -1,81 +1,71 @@
 package utils
 
 import (
-	"errors"
 	"fmt"
 	"io"
 	"mime/multipart"
-	"net/http"
 	"os"
 	"path/filepath"
-	"siro-backend/constants"
+	"siro-backend/constants" // Import constants
 	"strings"
 	"time"
 )
 
-// UploadConfig menyimpan konfigurasi upload dynamic
+// UploadConfig struct untuk konfigurasi upload
 type UploadConfig struct {
-	Folder      string
-	AllowedExts map[string]bool
-	AllowedMime map[string]bool
-	MaxBytes    int64
+	AllowedExts []string
+	MaxFileSize int64
+	SubDir      string
 }
 
-// DefaultImageConfig mengembalikan config standar untuk gambar
-func DefaultImageConfig(folder string) UploadConfig {
+func DefaultImageConfig(subDir string) UploadConfig {
 	return UploadConfig{
-		Folder:      folder,
-		AllowedExts: map[string]bool{".jpg": true, ".jpeg": true, ".png": true},
-		AllowedMime: map[string]bool{"image/jpeg": true, "image/png": true},
-		MaxBytes:    constants.MaxFileSize,
+		AllowedExts: []string{".jpg", ".jpeg", ".png"},
+		MaxFileSize: 2 * 1024 * 1024, // 2MB
+		SubDir:      subDir,
 	}
 }
 
-// SaveUploadedFile menangani validasi, sanitasi, dan penyimpanan file
 func SaveUploadedFile(file *multipart.FileHeader, config UploadConfig) (string, error) {
 	// Validasi Ukuran
-	if file.Size > config.MaxBytes {
-		return "", errors.New("file too large (max 2MB)")
+	if file.Size > config.MaxFileSize {
+		return "", fmt.Errorf("file too large (max 2MB)")
 	}
 
 	// Validasi Ekstensi
 	ext := strings.ToLower(filepath.Ext(file.Filename))
-	if !config.AllowedExts[ext] {
-		return "", errors.New("invalid file extension")
+	valid := false
+	for _, e := range config.AllowedExts {
+		if e == ext {
+			valid = true
+			break
+		}
+	}
+	if !valid {
+		return "", fmt.Errorf("invalid file extension")
 	}
 
-	// Validasi Magic Bytes
+	// Buat Nama File Unik
+	newFileName := fmt.Sprintf("%d_%s%s", time.Now().UnixNano(), config.SubDir, ext)
+
+	// --- GUNAKAN CONSTANT UNTUK ROOT PATH ---
+	uploadPath := filepath.Join(constants.DirUploads, config.SubDir)
+
+	// Ensure Directory Exists
+	if err := os.MkdirAll(uploadPath, os.ModePerm); err != nil {
+		return "", err
+	}
+
+	dst := filepath.Join(uploadPath, newFileName)
+
+	// Save File
 	src, err := file.Open()
 	if err != nil {
 		return "", err
 	}
 	defer src.Close()
 
-	buffer := make([]byte, 512)
-	if _, err := src.Read(buffer); err != nil {
-		return "", errors.New("failed to read file header")
-	}
-
-	// Reset pointer file kembali ke awal setelah dibaca
-	src.Seek(0, 0)
-
-	contentType := http.DetectContentType(buffer)
-	if !config.AllowedMime[contentType] {
-		return "", errors.New("invalid file content (mime type mismatch)")
-	}
-
-	// Persiapan Folder
-	uploadDir := filepath.Join("uploads", config.Folder)
-	if _, err := os.Stat(uploadDir); os.IsNotExist(err) {
-		os.MkdirAll(uploadDir, 0755)
-	}
-
-	// Generate Nama File Unik
-	filename := fmt.Sprintf("%d_%s%s", time.Now().UnixNano(), config.Folder, ext)
-	dstPath := filepath.Join(uploadDir, filename)
-
-	// Simpan File
-	out, err := os.Create(dstPath)
+	out, err := os.Create(dst)
 	if err != nil {
 		return "", err
 	}
@@ -85,13 +75,15 @@ func SaveUploadedFile(file *multipart.FileHeader, config UploadConfig) (string, 
 		return "", err
 	}
 
-	return fmt.Sprintf("/uploads/%s/%s", config.Folder, filename), nil
+	// Return relative URL path (e.g., /uploads/avatar/123.jpg)
+	return fmt.Sprintf("/%s/%s/%s", constants.DirUploads, config.SubDir, newFileName), nil
 }
 
-// GetBaseURL helper untuk generate full URL
 func GetBaseURL() string {
-	if url := os.Getenv("BACKEND_URL"); url != "" {
-		return url
+	// Helper untuk mendapatkan base URL (bisa dari ENV)
+	host := os.Getenv("BASE_URL")
+	if host == "" {
+		return "http://localhost:8080"
 	}
-	return "http://localhost:8080"
+	return host
 }

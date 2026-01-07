@@ -2,7 +2,8 @@ package controllers
 
 import (
 	"fmt"
-	"siro-backend/constants"
+	"net/http"
+	"siro-backend/constants" // Import constants
 	"siro-backend/models"
 	"siro-backend/repository"
 	"siro-backend/utils"
@@ -12,177 +13,151 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// Helper untuk mencatat Log Aktivitas ke Database
-func logActivity(userID uint, userName, action, details, status string, reqID uint) {
-	// Jalankan di background (goroutine) agar client tidak menunggu insert log selesai
-	go func() {
-		newLog := models.ActivityLog{
-			UserID:    userID,
-			UserName:  userName,
-			Action:    action,
-			Details:   details,
-			Status:    status,
-			RequestID: reqID,
-			Timestamp: time.Now(),
-		}
-		// Abaikan error untuk log aktivitas agar tidak crash process utama
-		if err := repository.CreateActivityLog(&newLog); err != nil {
-			fmt.Printf("[LOG ERROR] Failed to save activity: %v\n", err)
-		}
-	}()
-}
+// ... (Kode GetActivities dan CreateWorkOrder sama, biarkan saja) ...
+// Hanya tampilkan fungsi yang berubah untuk efisiensi, tapi pastikan package import di atas benar.
 
 func GetActivities(c *gin.Context) {
-	// Ambil 5 aktivitas terakhir
-	logs := repository.GetRecentActivities(5)
-	c.JSON(200, logs)
+	logs, err := repository.GetActivities()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch activities"})
+		return
+	}
+	c.JSON(http.StatusOK, logs)
 }
 
 func CreateWorkOrder(c *gin.Context) {
 	var input models.WorkOrderRequest
 	if err := c.ShouldBindJSON(&input); err != nil {
-		c.JSON(400, gin.H{"error": err.Error()})
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 
 	uid, exists := c.Get("userID")
 	if !exists {
-		c.JSON(401, gin.H{"error": "Unauthorized context"})
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Unauthorized context"})
 		return
 	}
 
 	role, _ := c.Get("role")
 	canCRUD, _ := c.Get("canCRUD")
-
-	canCRUDBool, ok := canCRUD.(bool)
-	if !ok {
-		canCRUDBool = false
-	}
+	canCRUDBool, _ := canCRUD.(bool)
 
 	if role != constants.RoleAdmin && !canCRUDBool {
-		c.JSON(403, gin.H{"error": "Permission denied"})
-		return
-	}
-
-	requester, err := repository.GetUserByID(uid.(uint))
-	if err != nil {
-		c.JSON(400, gin.H{"error": "User pembuat request tidak valid"})
+		c.JSON(http.StatusForbidden, gin.H{"error": "Permission denied"})
 		return
 	}
 
 	if input.Unit == "" {
-		c.JSON(400, gin.H{"error": "Unit tujuan harus dipilih"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Unit tujuan harus dipilih"})
 		return
 	}
 
 	newOrder := models.WorkOrder{
-		Title:         input.Title,
-		Description:   input.Description,
-		Priority:      input.Priority,
-		RequesterID:   requester.ID,
-		RequesterName: requester.Name,
-		Unit:          input.Unit,
-		PhotoURL:      input.PhotoURL,
-		Status:        constants.StatusPending,
-		CreatedAt:     time.Now(),
-		UpdatedAt:     time.Now(),
+		Title:       input.Title,
+		Description: input.Description,
+		Priority:    input.Priority,
+		RequesterID: uid.(uint),
+		Unit:        input.Unit,
+		PhotoURL:    input.PhotoURL,
+		Status:      constants.StatusPending,
+		CreatedAt:   time.Now(),
+		UpdatedAt:   time.Now(),
 	}
 
 	if err := repository.CreateWorkOrder(&newOrder); err != nil {
-		c.JSON(500, gin.H{"error": "Failed to create"})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create work order"})
 		return
 	}
 
-	logDesc := fmt.Sprintf("membuat request ke %s:", input.Unit)
-	logActivity(requester.ID, requester.Name, logDesc, newOrder.Title, constants.StatusPending, newOrder.ID)
+	fullOrder, err := repository.GetWorkOrderById(newOrder.ID)
+	if err == nil {
+		logDesc := fmt.Sprintf("membuat request ke %s:", input.Unit)
+		repository.LogActivity(fullOrder.RequesterID, fullOrder.RequesterName, logDesc, fullOrder.Title, constants.StatusPending, fullOrder.ID)
+	}
 
-	fullOrder, _ := repository.GetWorkOrderById(newOrder.ID)
-	c.JSON(201, fullOrder)
+	c.JSON(http.StatusCreated, fullOrder)
 }
 
 func UploadWorkOrderEvidence(c *gin.Context) {
 	file, err := c.FormFile("file")
 	if err != nil {
-		c.JSON(400, gin.H{"error": "No file uploaded"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "No file uploaded"})
 		return
 	}
 
-	uploadConfig := utils.DefaultImageConfig("workorder")
+	// FIX: Gunakan Constants
+	uploadConfig := utils.DefaultImageConfig(constants.DirWorkOrder)
+
 	relativePath, err := utils.SaveUploadedFile(file, uploadConfig)
-
 	if err != nil {
-		c.JSON(400, gin.H{"error": err.Error()})
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-
 	fullURL := utils.GetBaseURL() + relativePath
-	c.JSON(200, gin.H{
-		"message": "File uploaded successfully",
-		"url":     fullURL,
-	})
+	c.JSON(http.StatusOK, gin.H{"message": "File uploaded successfully", "url": fullURL})
 }
 
+// ... (Sisa fungsi GetWorkOrders, TakeRequest, AssignStaff, FinalizeOrder sama seperti sebelumnya) ...
 func GetWorkOrders(c *gin.Context) {
-	status := c.Query("status")
-	unit := c.Query("unit")
-	requesterUnit := c.Query("requester_unit") // Untuk tab Outgoing
-	date := c.Query("date")
-
 	filters := map[string]string{
-		"status":         status,
-		"unit":           unit,
-		"requester_unit": requesterUnit,
-		"date":           date,
+		"status":         c.Query("status"),
+		"unit":           c.Query("unit"),
+		"requester_unit": c.Query("requester_unit"),
+		"date":           c.Query("date"),
 	}
 
-	orders := repository.GetWorkOrders(filters)
-
-	c.JSON(200, orders)
+	orders, err := repository.GetWorkOrders(filters)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch work orders"})
+		return
+	}
+	if orders == nil {
+		orders = []models.WorkOrder{}
+	}
+	c.JSON(http.StatusOK, orders)
 }
 
 func TakeRequest(c *gin.Context) {
 	idStr := c.Param("id")
-
 	id, err := strconv.Atoi(idStr)
 	if err != nil {
-		c.JSON(400, gin.H{"error": "Invalid ID format"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid ID format"})
 		return
 	}
 
 	uid, _ := c.Get("userID")
 	userID := uid.(uint)
-	user, _ := repository.GetUserByID(userID)
+
+	user, err := repository.GetUserByID(userID)
+	if err != nil {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "User not found"})
+		return
+	}
 
 	order, err := repository.GetWorkOrderById(uint(id))
 	if err != nil {
-		c.JSON(404, gin.H{"error": "Not found"})
+		c.JSON(http.StatusNotFound, gin.H{"error": "Work Order not found"})
 		return
 	}
-
 	if order.Status == constants.StatusCompleted {
-		c.JSON(400, gin.H{"error": "Tiket sudah selesai, tidak bisa diambil lagi."})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Tiket sudah selesai"})
 		return
 	}
 
-	now := time.Now()
+	if err := repository.TakeWorkOrder(uint(id), userID); err != nil {
+		c.JSON(http.StatusConflict, gin.H{"error": "Gagal mengambil tiket. Mungkin sudah diambil orang lain."})
+		return
+	}
 
-	order.AssigneeID = &userID
-	order.Status = constants.StatusInProgress
-	order.TakenAt = &now
-
-	repository.UpdateWorkOrder(&order)
-
-	logActivity(user.ID, user.Name, "sedang mengerjakan:", order.Title, constants.StatusInProgress, order.ID)
-
-	c.JSON(200, gin.H{"message": "Taken"})
+	repository.LogActivity(user.ID, user.Name, "sedang mengerjakan:", order.Title, constants.StatusInProgress, order.ID)
+	c.JSON(http.StatusOK, gin.H{"message": "Taken successfully"})
 }
 
 func AssignStaff(c *gin.Context) {
 	idStr := c.Param("id")
-
 	id, err := strconv.Atoi(idStr)
 	if err != nil {
-		c.JSON(400, gin.H{"error": "Invalid ID format"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid ID format"})
 		return
 	}
 
@@ -191,47 +166,41 @@ func AssignStaff(c *gin.Context) {
 
 	var i models.AssignRequest
 	if err := c.ShouldBindJSON(&i); err != nil {
-		c.JSON(400, gin.H{"error": "Invalid input"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid input"})
 		return
 	}
 
 	assignee, err := repository.GetUserByID(i.AssigneeID)
 	if err != nil {
-		c.JSON(404, gin.H{"error": "Staff not found"})
+		c.JSON(http.StatusNotFound, gin.H{"error": "Staff not found"})
 		return
 	}
 
 	order, err := repository.GetWorkOrderById(uint(id))
 	if err != nil {
-		c.JSON(404, gin.H{"error": "Work order not found"})
+		c.JSON(http.StatusNotFound, gin.H{"error": "Work order not found"})
 		return
 	}
-
 	if order.Status == constants.StatusCompleted {
-		c.JSON(400, gin.H{"error": "Tiket sudah selesai."})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Tiket sudah selesai."})
 		return
 	}
 
-	now := time.Now()
-
-	order.AssigneeID = &i.AssigneeID
-	order.Status = constants.StatusInProgress
-	order.TakenAt = &now
-
-	repository.UpdateWorkOrder(&order)
+	if err := repository.AssignWorkOrder(uint(id), i.AssigneeID); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to assign staff"})
+		return
+	}
 
 	logMessage := fmt.Sprintf("menugaskan request kepada %s:", assignee.Name)
-	logActivity(admin.ID, admin.Name, logMessage, order.Title, constants.StatusInProgress, order.ID)
-
-	c.JSON(200, gin.H{"message": "Assigned"})
+	repository.LogActivity(admin.ID, admin.Name, logMessage, order.Title, constants.StatusInProgress, order.ID)
+	c.JSON(http.StatusOK, gin.H{"message": "Assigned successfully"})
 }
 
 func FinalizeOrder(c *gin.Context) {
 	idStr := c.Param("id")
-
 	id, err := strconv.Atoi(idStr)
 	if err != nil {
-		c.JSON(400, gin.H{"error": "Invalid ID format"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid ID format"})
 		return
 	}
 
@@ -240,36 +209,29 @@ func FinalizeOrder(c *gin.Context) {
 	user, _ := repository.GetUserByID(uid.(uint))
 
 	var input models.FinalizeRequest
-	if err := c.ShouldBindJSON(&input); err != nil {
-		// Lanjut aja kalau bind gagal, note bisa kosong
-	}
+	_ = c.ShouldBindJSON(&input)
 
 	order, err := repository.GetWorkOrderById(uint(id))
 	if err != nil {
-		c.JSON(404, gin.H{"error": "Not found"})
+		c.JSON(http.StatusNotFound, gin.H{"error": "Not found"})
 		return
 	}
 
 	if order.AssigneeID == nil {
-		c.JSON(400, gin.H{"error": "Tiket belum diambil oleh siapapun"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Tiket belum diambil"})
 		return
 	}
 
 	if *order.AssigneeID != user.ID && role != constants.RoleAdmin {
-		c.JSON(403, gin.H{"error": "Akses ditolak. Hanya staff penanggung jawab yang boleh menyelesaikan tiket."})
+		c.JSON(http.StatusForbidden, gin.H{"error": "Akses ditolak"})
 		return
 	}
 
-	now := time.Now()
+	if err := repository.FinalizeWorkOrder(uint(id), input.Note, user.ID); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to finalize order"})
+		return
+	}
 
-	order.Status = constants.StatusCompleted
-	order.CompletedAt = &now
-	order.CompletedByID = &user.ID
-	order.CompletionNote = input.Note
-
-	repository.UpdateWorkOrder(&order)
-
-	logActivity(user.ID, user.Name, "telah menyelesaikan tiket:", order.Title, constants.StatusCompleted, order.ID)
-
-	c.JSON(200, gin.H{"message": "Done"})
+	repository.LogActivity(user.ID, user.Name, "telah menyelesaikan tiket:", order.Title, constants.StatusCompleted, order.ID)
+	c.JSON(http.StatusOK, gin.H{"message": "Work Order Finalized"})
 }

@@ -1,16 +1,16 @@
 package config
 
 import (
+	"database/sql"
 	"fmt"
 	"log"
 	"os"
-	"siro-backend/models"
+	"time"
 
-	"gorm.io/driver/mysql"
-	"gorm.io/gorm"
+	_ "github.com/go-sql-driver/mysql"
 )
 
-var DB *gorm.DB
+var DB *sql.DB
 
 func ConnectDB() {
 	user := os.Getenv("DB_USER")
@@ -19,19 +19,24 @@ func ConnectDB() {
 	port := os.Getenv("DB_PORT")
 	name := os.Getenv("DB_NAME")
 
-	dsn := fmt.Sprintf("%s:%s@tcp(%s:%s)/%s?charset=utf8mb4&parseTime=True&loc=Local",
+	// parseTime=true wajib agar scan ke time.Time berfungsi
+	dsn := fmt.Sprintf("%s:%s@tcp(%s:%s)/%s?charset=utf8mb4&parseTime=true&loc=Local",
 		user, pass, host, port, name)
 
 	var err error
-	DB, err = gorm.Open(mysql.Open(dsn), &gorm.Config{})
+	DB, err = sql.Open("mysql", dsn)
 	if err != nil {
-		log.Fatal("Gagal koneksi database: ", err)
+		log.Fatal("Gagal membuka koneksi database: ", err)
 	}
 
-	err = DB.AutoMigrate(&models.User{}, &models.UserToken{}, &models.WorkOrder{}, &models.ActivityLog{})
-	if err != nil {
-		log.Fatal("Gagal migrasi database: ", err)
+	// Set connection pool settings agar performa stabil
+	DB.SetMaxOpenConns(25)
+	DB.SetMaxIdleConns(5)
+	DB.SetConnMaxLifetime(5 * time.Minute)
+
+	if err := DB.Ping(); err != nil {
+		log.Fatal("Gagal ping database: ", err)
 	}
 
-	log.Println("Database Connected Successfully via .env config!")
+	log.Println("Database Connected Successfully via database/sql!")
 }

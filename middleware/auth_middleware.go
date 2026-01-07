@@ -1,6 +1,8 @@
 package middleware
 
 import (
+	"fmt"
+	"net/http"
 	"siro-backend/constants"
 	"siro-backend/repository"
 	"siro-backend/utils"
@@ -12,49 +14,94 @@ import (
 
 func AuthMiddleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
-		authHeader := c.GetHeader("Authorization")
-		if authHeader == "" || !strings.HasPrefix(authHeader, "Bearer ") {
-			c.AbortWithStatusJSON(401, gin.H{"error": "Unauthorized"})
+		// --- BYPASS OPTIONS (PREFLIGHT) ---
+		// Jika method OPTIONS, langsung return 204 No Content.
+		// Jangan divalidasi tokennya, karena browser tidak kirim token saat preflight.
+		if c.Request.Method == "OPTIONS" {
+			c.AbortWithStatus(204)
 			return
 		}
 
-		tokenString := strings.Split(authHeader, "Bearer ")[1]
+		// 1. Ambil Header Authorization
+		authHeader := c.GetHeader("Authorization")
+		if authHeader == "" {
+			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "Authorization header required"})
+			return
+		}
 
-		token, err := jwt.Parse(tokenString, func(token *jwt.Token) (interface{}, error) {
+		// 2. Format harus "Bearer <token>"
+		parts := strings.Split(authHeader, " ")
+		if len(parts) != 2 || parts[0] != "Bearer" {
+			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "Invalid token format"})
+			return
+		}
+
+		tokenString := parts[1]
+
+		// 3. Parse Token
+		token, err := jwt.Parse(tokenString, func(t *jwt.Token) (interface{}, error) {
+			if _, ok := t.Method.(*jwt.SigningMethodHMAC); !ok {
+				return nil, fmt.Errorf("unexpected signing method")
+			}
 			return utils.JwtSecret, nil
 		})
 
 		if err != nil || !token.Valid {
-			c.AbortWithStatusJSON(401, gin.H{"error": "Invalid Token Signature"})
+			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "Invalid or expired token"})
 			return
 		}
 
-		claims, ok := token.Claims.(jwt.MapClaims)
-		if !ok {
-			c.AbortWithStatusJSON(401, gin.H{"error": "Invalid Claims"})
+		// 4. Ekstrak Claims
+		if claims, ok := token.Claims.(jwt.MapClaims); ok {
+			// Handle user_id
+			if idFloat, ok := claims["user_id"].(float64); ok {
+				c.Set("userID", uint(idFloat))
+			} else {
+				c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "Invalid token claims: user_id"})
+				return
+			}
+
+			// Handle role
+			if role, ok := claims["role"].(string); ok {
+				c.Set("role", role)
+			} else {
+				c.Set("role", "")
+			}
+
+			// Handle canCRUD (Sesuai dengan key di token.go)
+			if canCRUD, ok := claims["canCRUD"].(bool); ok {
+				c.Set("canCRUD", canCRUD)
+			} else {
+				c.Set("canCRUD", false)
+			}
+
+			// Validasi Database (Strict)
+			userID := uint(claims["user_id"].(float64))
+			if !repository.CheckAccessTokenValid(userID, tokenString) {
+				c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "Session expired or logged out"})
+				return
+			}
+
+		} else {
+			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "Invalid token claims"})
 			return
 		}
 
-		userID := uint(claims["user_id"].(float64))
-
-		isValidInDB := repository.CheckAccessTokenValid(userID, tokenString)
-		if !isValidInDB {
-			c.AbortWithStatusJSON(401, gin.H{"error": "Session revoked or expired"})
-			return
-		}
-
-		c.Set("userID", userID)
-		c.Set("role", claims["role"].(string))
-		c.Set("canCRUD", claims["canCRUD"].(bool))
 		c.Next()
 	}
 }
 
 func AdminOnly() gin.HandlerFunc {
 	return func(c *gin.Context) {
+		// Bypass OPTIONS juga untuk Admin route
+		if c.Request.Method == "OPTIONS" {
+			c.AbortWithStatus(204)
+			return
+		}
+
 		role, exists := c.Get("role")
 		if !exists || role != constants.RoleAdmin {
-			c.AbortWithStatusJSON(403, gin.H{"error": "Admin only area"})
+			c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": "Forbidden: Admins only"})
 			return
 		}
 		c.Next()
