@@ -13,16 +13,38 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// ... (Kode GetActivities dan CreateWorkOrder sama, biarkan saja) ...
-// Hanya tampilkan fungsi yang berubah untuk efisiensi, tapi pastikan package import di atas benar.
+// Helper untuk parse pagination param
+func getPaginationParams(c *gin.Context) (int, int) {
+	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
+	limit, _ := strconv.Atoi(c.DefaultQuery("limit", "10"))
+
+	if page < 1 {
+		page = 1
+	}
+	if limit < 1 {
+		limit = 10
+	}
+	if limit > 100 {
+		limit = 100
+	}
+
+	return page, limit
+}
 
 func GetActivities(c *gin.Context) {
-	logs, err := repository.GetActivities()
+	page, limit := getPaginationParams(c)
+
+	logs, meta, err := repository.GetActivities(page, limit)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch activities"})
 		return
 	}
-	c.JSON(http.StatusOK, logs)
+
+	// Return format baru: { data: [...], meta: {...} }
+	c.JSON(http.StatusOK, models.PaginatedResponse{
+		Data: logs,
+		Meta: meta,
+	})
 }
 
 func CreateWorkOrder(c *gin.Context) {
@@ -97,8 +119,9 @@ func UploadWorkOrderEvidence(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"message": "File uploaded successfully", "url": fullURL})
 }
 
-// ... (Sisa fungsi GetWorkOrders, TakeRequest, AssignStaff, FinalizeOrder sama seperti sebelumnya) ...
 func GetWorkOrders(c *gin.Context) {
+	page, limit := getPaginationParams(c)
+
 	filters := map[string]string{
 		"status":         c.Query("status"),
 		"unit":           c.Query("unit"),
@@ -106,7 +129,7 @@ func GetWorkOrders(c *gin.Context) {
 		"date":           c.Query("date"),
 	}
 
-	orders, err := repository.GetWorkOrders(filters)
+	orders, meta, err := repository.GetWorkOrders(filters, page, limit)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch work orders"})
 		return
@@ -114,7 +137,12 @@ func GetWorkOrders(c *gin.Context) {
 	if orders == nil {
 		orders = []models.WorkOrder{}
 	}
-	c.JSON(http.StatusOK, orders)
+
+	// Return format baru: { data: [...], meta: {...} }
+	c.JSON(http.StatusOK, models.PaginatedResponse{
+		Data: orders,
+		Meta: meta,
+	})
 }
 
 func TakeRequest(c *gin.Context) {

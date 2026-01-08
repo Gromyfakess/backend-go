@@ -131,16 +131,26 @@ func RefreshHandler(c *gin.Context) {
 }
 
 func LogoutHandler(c *gin.Context) {
-	// 1. Hapus Cookie di Browser
+	// 1. Coba ambil UserID dari cookie untuk menghapus sesi di Database
+	cookie, err := c.Cookie("refresh_token")
+	if err == nil && cookie != "" {
+		token, _ := jwt.Parse(cookie, func(t *jwt.Token) (interface{}, error) {
+			return utils.JwtSecret, nil
+		})
+
+		if token != nil {
+			if claims, ok := token.Claims.(jwt.MapClaims); ok {
+				// Ambil UserID
+				if idFloat, ok := claims["user_id"].(float64); ok {
+					userID := uint(idFloat)
+					_ = repository.DeleteToken(userID)
+				}
+			}
+		}
+	}
+
 	isProduction := os.Getenv("APP_ENV") == "production"
 	c.SetCookie("refresh_token", "", -1, "/", "", isProduction, true)
-
-	// Catatan: Karena LogoutHandler ini route publik (biasanya),
-	// kita kadang tidak punya akses ke UserID dari context jika token access sudah mati.
-	// Jadi clearing cookie adalah pertahanan "frontend" utama.
-
-	// Jika Anda ingin logout server-side yang kuat, pastikan endpoint ini diproteksi middleware,
-	// lalu panggil: repository.DeleteToken(userID)
 
 	c.JSON(http.StatusOK, gin.H{"message": "Successfully logged out"})
 }

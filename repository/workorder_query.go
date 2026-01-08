@@ -3,6 +3,7 @@ package repository
 import (
 	"database/sql"
 	"fmt"
+	"math"
 	"siro-backend/config"
 	"siro-backend/constants"
 	"siro-backend/models"
@@ -87,15 +88,18 @@ func GetWorkOrderById(id uint) (models.WorkOrder, error) {
 	return models.WorkOrder{}, fmt.Errorf("not found")
 }
 
-func GetWorkOrders(filters map[string]string) ([]models.WorkOrder, error) {
+func GetWorkOrders(filters map[string]string, page, limit int) ([]models.WorkOrder, models.PaginationMeta, error) {
 	query := selectWOQuery
+	countQuery := "SELECT COUNT(*) FROM work_orders w LEFT JOIN users req ON w.requester_id = req.id"
+
 	var conditions []string
 	var args []interface{}
 
+	// --- 1. FILTERING (Sama seperti sebelumnya) ---
 	if s := filters["status"]; s != "" {
 		if s == "active" {
 			conditions = append(conditions, "w.status IN (?, ?)")
-			args = append(args, constants.StatusPending, constants.StatusInProgress)
+			args = append(args, "Pending", "In Progress") // Hardcoded string or constants
 		} else {
 			conditions = append(conditions, "w.status = ?")
 			args = append(args, s)
@@ -113,14 +117,28 @@ func GetWorkOrders(filters map[string]string) ([]models.WorkOrder, error) {
 		conditions = append(conditions, "DATE(w.created_at) = CURDATE()")
 	}
 
+	whereClause := ""
 	if len(conditions) > 0 {
-		query += " WHERE " + strings.Join(conditions, " AND ")
+		whereClause = " WHERE " + strings.Join(conditions, " AND ")
 	}
-	query += " ORDER BY w.created_at DESC LIMIT 50"
+
+	// --- 2. HITUNG TOTAL DATA (COUNT) ---
+	var totalItems int
+	err := config.DB.QueryRow(countQuery+whereClause, args...).Scan(&totalItems)
+	if err != nil {
+		return nil, models.PaginationMeta{}, err
+	}
+
+	// --- 3. QUERY DATA DENGAN PAGINATION ---
+	offset := (page - 1) * limit
+	query += whereClause + " ORDER BY w.created_at DESC LIMIT ? OFFSET ?"
+
+	// Tambahkan limit & offset ke args
+	args = append(args, limit, offset)
 
 	rows, err := config.DB.Query(query, args...)
 	if err != nil {
-		return nil, err
+		return nil, models.PaginationMeta{}, err
 	}
 	defer rows.Close()
 
@@ -130,7 +148,18 @@ func GetWorkOrders(filters map[string]string) ([]models.WorkOrder, error) {
 			wos = append(wos, wo)
 		}
 	}
-	return wos, nil
+
+	// --- 4. SIAPKAN METADATA ---
+	totalPages := int(math.Ceil(float64(totalItems) / float64(limit)))
+
+	meta := models.PaginationMeta{
+		CurrentPage: page,
+		TotalPages:  totalPages,
+		TotalItems:  totalItems,
+		Limit:       limit,
+	}
+
+	return wos, meta, nil
 }
 
 // --- ACTIONS ---

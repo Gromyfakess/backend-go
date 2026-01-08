@@ -104,3 +104,15 @@ type AvailabilityRequest struct {
 type FinalizeRequest struct {
 	Note string `json:"note"`
 }
+
+type PaginationMeta struct {
+	CurrentPage int `json:"current_page"`
+	TotalPages  int `json:"total_pages"`
+	TotalItems  int `json:"total_items"`
+	Limit       int `json:"limit"`
+}
+
+type PaginatedResponse struct {
+	Data interface{}    `json:"data"`
+	Meta PaginationMeta `json:"meta"`
+}
