@@ -81,6 +81,10 @@ type LoginRequest struct {
 	Password string `json:"password" binding:"required"`
 }
 
+type RefreshRequest struct {
+	RefreshToken string `json:"refreshToken" binding:"required"`
+}
+
 type WorkOrderRequest struct {
 	Title       string `json:"title" binding:"required"`
 	Description string `json:"description"`

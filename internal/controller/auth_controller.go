@@ -53,24 +53,19 @@ func LoginHandler(c *gin.Context) {
 
 	// Return all tokens and user info in JSON body
 	c.JSON(http.StatusOK, gin.H{
-		"statusCode":          http.StatusOK,
-		"accessToken":         accessToken,
+		"statusCode":           http.StatusOK,
+		"accessToken":          accessToken,
 		"accessTokenExpiresAt": accessExpiry.Unix(),
-		"refreshToken":        refreshToken,
-		"user":                user,
+		"refreshToken":         refreshToken,
+		"user":                 user,
 	})
-}
-
-// RefreshRequest represents the refresh token request body
-type RefreshRequest struct {
-	RefreshToken string `json:"refreshToken" binding:"required"`
 }
 
 // RefreshHandler generates a new access token using refresh token
 // Refresh token is read from JSON body and stays unchanged
 func RefreshHandler(c *gin.Context) {
 	// Parse refresh token from request body
-	var input RefreshRequest
+	var input models.RefreshRequest
 	if err := c.ShouldBindJSON(&input); err != nil {
 		sendError(c, http.StatusBadRequest, "Refresh token is required")
 		return
@@ -146,8 +141,8 @@ func RefreshHandler(c *gin.Context) {
 
 	// Return new access token and expiry in JSON body
 	c.JSON(http.StatusOK, gin.H{
-		"statusCode":          http.StatusOK,
-		"accessToken":         newAccessToken,
+		"statusCode":           http.StatusOK,
+		"accessToken":          newAccessToken,
 		"accessTokenExpiresAt": newAccessExpiry.Unix(),
 	})
 }
