@@ -44,7 +44,10 @@ func CreateUser(u *models.User) error {
 }
 
 func GetAllUsers() ([]models.User, error) {
-	rows, err := setting.DB.Query("SELECT id, name, email, role, unit, availability, COALESCE(avatar_url, '') FROM users")
+	rows, err := setting.DB.Query(`
+        SELECT id, name, email, role, unit, availability, can_crud, COALESCE(avatar_url, '') 
+        FROM users
+    `)
 	if err != nil {
 		return nil, err
 	}
@@ -53,7 +56,7 @@ func GetAllUsers() ([]models.User, error) {
 	var users []models.User
 	for rows.Next() {
 		var u models.User
-		if err := rows.Scan(&u.ID, &u.Name, &u.Email, &u.Role, &u.Unit, &u.Availability, &u.AvatarURL); err == nil {
+		if err := rows.Scan(&u.ID, &u.Name, &u.Email, &u.Role, &u.Unit, &u.Availability, &u.CanCRUD, &u.AvatarURL); err == nil {
 			users = append(users, u)
 		}
 	}
@@ -62,8 +65,8 @@ func GetAllUsers() ([]models.User, error) {
 
 // GetUsersByUnit: Filter langsung di DB (Optimasi RAM & Performance)
 func GetUsersByUnit(unit string) ([]models.User, error) {
-	query := `SELECT id, name, email, role, unit, availability, COALESCE(avatar_url, '') 
-	          FROM users WHERE unit = ?`
+	query := `SELECT id, name, email, role, unit, availability, can_crud, COALESCE(avatar_url, '') 
+              FROM users WHERE unit = ?`
 
 	rows, err := setting.DB.Query(query, unit)
 	if err != nil {
@@ -74,7 +77,7 @@ func GetUsersByUnit(unit string) ([]models.User, error) {
 	var users []models.User
 	for rows.Next() {
 		var u models.User
-		if err := rows.Scan(&u.ID, &u.Name, &u.Email, &u.Role, &u.Unit, &u.Availability, &u.AvatarURL); err == nil {
+		if err := rows.Scan(&u.ID, &u.Name, &u.Email, &u.Role, &u.Unit, &u.Availability, &u.CanCRUD, &u.AvatarURL); err == nil {
 			users = append(users, u)
 		}
 	}

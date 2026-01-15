@@ -25,7 +25,4 @@ const (
 	DirUploads   = "uploads"
 	DirAvatar    = "avatar"
 	DirWorkOrder = "workorder"
-
-	// Default Config
-	DefaultUnit = "IT Center"
 )

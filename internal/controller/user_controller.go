@@ -115,9 +115,14 @@ func UploadFile(c *gin.Context) {
 	sendSuccess(c, gin.H{"url": fullURL})
 }
 
-// GetStaffList returns list of staff members
+// GetStaffList returns list of staff members based on current user's unit
 func GetStaffList(c *gin.Context) {
-	staff, err := repo.GetUsersByUnit(global.DefaultUnit)
+	user, ok := getCurrentUser(c)
+	if !ok {
+		return
+	}
+
+	staff, err := repo.GetUsersByUnit(user.Unit)
 	if err != nil {
 		sendError(c, http.StatusInternalServerError, "Failed to fetch staff")
 		return

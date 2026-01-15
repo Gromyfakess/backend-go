@@ -48,7 +48,7 @@ func GetActivities(c *gin.Context) {
 	sendPaginatedResponse(c, logs, meta)
 }
 
-// CreateWorkOrder creates a new work order/ticket
+// CreateWorkOrder creates a new request
 func CreateWorkOrder(c *gin.Context) {
 	user, ok := getCurrentUser(c)
 	if !ok {
@@ -76,7 +76,13 @@ func CreateWorkOrder(c *gin.Context) {
 		return
 	}
 
-	// Create work order
+	// SECURITY CHECK: Cannot create request for own unit
+	if input.Unit == user.Unit {
+		sendError(c, http.StatusBadRequest, "You cannot create a request for your own unit")
+		return
+	}
+
+	// Create request
 	newOrder := models.WorkOrder{
 		Title:       input.Title,
 		Description: input.Description,
@@ -90,16 +96,16 @@ func CreateWorkOrder(c *gin.Context) {
 	}
 
 	if err := repo.CreateWorkOrder(&newOrder); err != nil {
-		log.Printf("Error creating work order: %v", err)
-		sendError(c, http.StatusInternalServerError, "Failed to create work order")
+		log.Printf("Error creating request: %v", err)
+		sendError(c, http.StatusInternalServerError, "Failed to create request")
 		return
 	}
 
-	// Get full order details
+	// Get full request details
 	fullOrder, err := repo.GetWorkOrderById(newOrder.ID)
 	if err != nil {
-		log.Printf("Error retrieving created work order %d: %v", newOrder.ID, err)
-		sendError(c, http.StatusInternalServerError, "Work order created but failed to retrieve details")
+		log.Printf("Error retrieving created request %d: %v", newOrder.ID, err)
+		sendError(c, http.StatusInternalServerError, "Request created but failed to retrieve details")
 		return
 	}
 
@@ -112,7 +118,7 @@ func CreateWorkOrder(c *gin.Context) {
 	})
 }
 
-// UploadWorkOrderEvidence handles file upload for work order evidence
+// UploadWorkOrderEvidence handles file upload for request evidence
 func UploadWorkOrderEvidence(c *gin.Context) {
 	file, err := c.FormFile("file")
 	if err != nil {
@@ -135,7 +141,7 @@ func UploadWorkOrderEvidence(c *gin.Context) {
 	})
 }
 
-// GetWorkOrders returns paginated list of work orders with filters
+// GetWorkOrders returns paginated list of requests with filters
 func GetWorkOrders(c *gin.Context) {
 	pagination := getPaginationParams(c)
 
@@ -148,15 +154,15 @@ func GetWorkOrders(c *gin.Context) {
 
 	orders, meta, err := repo.GetWorkOrders(filters, pagination.Page, pagination.Limit)
 	if err != nil {
-		log.Printf("Error getting work orders: %v", err)
-		sendError(c, http.StatusInternalServerError, "Failed to fetch work orders")
+		log.Printf("Error getting requests: %v", err)
+		sendError(c, http.StatusInternalServerError, "Failed to fetch requests")
 		return
 	}
 
 	sendPaginatedResponse(c, orders, meta)
 }
 
-// TakeRequest allows a staff member to take/claim a work order
+// TakeRequest allows a staff member to take/claim a request
 func TakeRequest(c *gin.Context) {
 	user, ok := getCurrentUser(c)
 	if !ok {
@@ -170,25 +176,31 @@ func TakeRequest(c *gin.Context) {
 
 	order, err := repo.GetWorkOrderById(orderID)
 	if err != nil {
-		sendError(c, http.StatusNotFound, "Work order not found")
+		sendError(c, http.StatusNotFound, "Request not found")
+		return
+	}
+
+	// SECURITY CHECK: You can only take a request if it is assigned to YOUR unit.
+	if order.Unit != user.Unit {
+		sendError(c, http.StatusForbidden, "You cannot take a request assigned to another unit.")
 		return
 	}
 
 	if order.Status == global.StatusCompleted {
-		sendError(c, http.StatusBadRequest, "Work order already completed")
+		sendError(c, http.StatusBadRequest, "Request already completed")
 		return
 	}
 
 	if err := repo.TakeWorkOrder(orderID, user.ID); err != nil {
-		sendError(c, http.StatusConflict, "Failed to take work order. It may have been taken by someone else.")
+		sendError(c, http.StatusConflict, "Failed to take request. It may have been taken by someone else.")
 		return
 	}
 
 	repo.LogActivity(user.ID, user.Name, "is working on:", order.Title, global.StatusInProgress, order.ID)
-	sendSuccess(c, gin.H{"message": "Work order taken successfully"})
+	sendSuccess(c, gin.H{"message": "Request taken successfully"})
 }
 
-// AssignStaff allows admin to assign a work order to a staff member
+// AssignStaff allows admin to assign a request to a staff member
 func AssignStaff(c *gin.Context) {
 	admin, ok := getCurrentUser(c)
 	if !ok {
@@ -206,25 +218,39 @@ func AssignStaff(c *gin.Context) {
 		return
 	}
 
+	// Fetch Order First to check permissions
+	order, err := repo.GetWorkOrderById(orderID)
+	if err != nil {
+		sendError(c, http.StatusNotFound, "Request not found")
+		return
+	}
+
+	// SECURITY CHECK: Only users from the target unit can assign staff.
+	if order.Unit != admin.Unit {
+		sendError(c, http.StatusForbidden, "You cannot assign staff to a request for another unit.")
+		return
+	}
+
+	// Verify Assignee
 	assignee, err := repo.GetUserByID(input.AssigneeID)
 	if err != nil {
 		sendError(c, http.StatusNotFound, "Staff member not found")
 		return
 	}
 
-	order, err := repo.GetWorkOrderById(orderID)
-	if err != nil {
-		sendError(c, http.StatusNotFound, "Work order not found")
+	// SECURITY CHECK: Assignee must be from the same unit
+	if assignee.Unit != admin.Unit {
+		sendError(c, http.StatusBadRequest, "Assignee must be from the same unit")
 		return
 	}
 
 	if order.Status == global.StatusCompleted {
-		sendError(c, http.StatusBadRequest, "Work order already completed")
+		sendError(c, http.StatusBadRequest, "Request already completed")
 		return
 	}
 
 	if err := repo.AssignWorkOrder(orderID, input.AssigneeID); err != nil {
-		log.Printf("Error assigning work order %d to user %d: %v", orderID, input.AssigneeID, err)
+		log.Printf("Error assigning request %d to user %d: %v", orderID, input.AssigneeID, err)
 		sendError(c, http.StatusInternalServerError, "Failed to assign staff")
 		return
 	}
@@ -233,7 +259,7 @@ func AssignStaff(c *gin.Context) {
 	sendSuccess(c, gin.H{"message": "Staff assigned successfully"})
 }
 
-// FinalizeOrder marks a work order as completed
+// FinalizeOrder marks a request as completed
 func FinalizeOrder(c *gin.Context) {
 	user, ok := getCurrentUser(c)
 	if !ok {
@@ -252,12 +278,18 @@ func FinalizeOrder(c *gin.Context) {
 
 	order, err := repo.GetWorkOrderById(orderID)
 	if err != nil {
-		sendError(c, http.StatusNotFound, "Work order not found")
+		sendError(c, http.StatusNotFound, "Request not found")
+		return
+	}
+
+	// SECURITY CHECK: Only the unit responsible for the work can finalize it.
+	if order.Unit != user.Unit {
+		sendError(c, http.StatusForbidden, "You cannot finalize a request belonging to another unit.")
 		return
 	}
 
 	if order.AssigneeID == nil {
-		sendError(c, http.StatusBadRequest, "Work order has not been assigned yet")
+		sendError(c, http.StatusBadRequest, "Request has not been assigned yet")
 		return
 	}
 
@@ -269,11 +301,11 @@ func FinalizeOrder(c *gin.Context) {
 	}
 
 	if err := repo.FinalizeWorkOrder(orderID, input.Note, user.ID); err != nil {
-		log.Printf("Error finalizing work order %d: %v", orderID, err)
-		sendError(c, http.StatusInternalServerError, "Failed to finalize work order")
+		log.Printf("Error finalizing request %d: %v", orderID, err)
+		sendError(c, http.StatusInternalServerError, "Failed to finalize request")
 		return
 	}
 
 	repo.LogActivity(user.ID, user.Name, "completed request:", order.Title, global.StatusCompleted, order.ID)
-	sendSuccess(c, gin.H{"message": "Work order finalized successfully"})
+	sendSuccess(c, gin.H{"message": "Request finalized successfully"})
 }

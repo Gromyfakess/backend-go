@@ -13,11 +13,13 @@ func SetupRoutes(r *gin.Engine) {
 
 	r.POST("/login", controller.LoginHandler)
 	r.POST("/refresh", controller.RefreshHandler)
-	r.POST("/logout", controller.LogoutHandler)
 
 	api := r.Group("/")
+
 	api.Use(middlewares.AuthMiddleware())
+
 	{
+		api.POST("/logout", controller.LogoutHandler)
 		api.GET("/me", controller.GetMe)
 		api.PUT("/me", controller.UpdateMe)
 		api.POST("/upload", controller.UploadFile)
